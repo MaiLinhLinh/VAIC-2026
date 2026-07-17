@@ -1,0 +1,18 @@
+{"message": "Em muốn mua tủ lạnh dưới 20 triệu cho nhà 4 người, tiết kiệm điện", "expect_category": "tu_lanh", "expect_budget_max": 20000000, "expect_prefs": ["tiết kiệm điện"]}
+{"message": "e muon mua tu lanh duoi 20tr cho nha 4 nguoi, tiet kiem dien", "expect_category": "tu_lanh", "expect_budget_max": 20000000, "expect_prefs": ["tiết kiệm điện"]}
+{"message": "tu lanh gia re duoi 8tr cu goi y dai di em", "expect_category": "tu_lanh", "expect_budget_max": 8000000, "expect_prefs": []}
+{"message": "Cần máy sấy quần áo tải lớn, tiết kiệm điện cho gia đình đông người", "expect_category": "may_say", "expect_budget_max": null, "expect_prefs": ["tải lớn", "tiết kiệm điện"]}
+{"message": "can may say tai lon duoi 10tr", "expect_category": "may_say", "expect_budget_max": 10000000, "expect_prefs": ["tải lớn"]}
+{"message": "may rua chen it on cho gia dinh 4 nguoi", "expect_category": "may_rua_chen", "expect_budget_max": null, "expect_prefs": ["ít ồn"]}
+{"message": "Máy rửa chén tiết kiệm nước dưới 15 triệu", "expect_category": "may_rua_chen", "expect_budget_max": 15000000, "expect_prefs": ["tiết kiệm nước"]}
+{"message": "tu dong tiet kiem dien dung tich lon", "expect_category": "tu_mat", "expect_budget_max": null, "expect_prefs": ["tiết kiệm điện", "dung tích lớn"]}
+{"message": "Tủ mát ít ồn dưới 12 triệu cho quán cà phê nhỏ", "expect_category": "tu_mat", "expect_budget_max": 12000000, "expect_prefs": ["ít ồn"]}
+{"message": "can cai dong ho thong minh cho be di hoc, pin lau", "expect_category": "dong_ho", "expect_budget_max": null, "expect_prefs": ["pin lâu"]}
+{"message": "Đồng hồ thông minh màn hình lớn dưới 3 triệu cho người lớn tuổi", "expect_category": "dong_ho", "expect_budget_max": 3000000, "expect_prefs": ["màn hình lớn"]}
+{"message": "dong ho thong minh cu goi y dai em oi", "expect_category": "dong_ho", "expect_budget_max": null, "expect_prefs": []}
+{"message": "mua man hinh gaming duoi 5 trieu phan hoi nhanh", "expect_category": "man_hinh", "expect_budget_max": 5000000, "expect_prefs": ["phản hồi nhanh"]}
+{"message": "Màn hình chơi game màn hình lớn dưới 8 triệu", "expect_category": "man_hinh", "expect_budget_max": 8000000, "expect_prefs": ["chơi game", "màn hình lớn"]}
+{"message": "man hinh van phong tiet kiem dien duoi 4tr", "expect_category": "man_hinh", "expect_budget_max": 4000000, "expect_prefs": ["tiết kiệm điện"]}
+{"message": "may rua chen duoi 20tr cho gia dinh 6 nguoi", "expect_category": "may_rua_chen", "expect_budget_max": 20000000, "expect_prefs": []}
+{"message": "tu mat tu dong duoi 10 trieu tiet kiem dien it on", "expect_category": "tu_mat", "expect_budget_max": 10000000, "expect_prefs": ["tiết kiệm điện", "ít ồn"]}
+{"message": "may say 6kg tai lon", "expect_category": "may_say", "expect_budget_max": null, "expect_prefs": ["tải lớn"]}
