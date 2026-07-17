@@ -43,7 +43,7 @@ def test_why_not_group_for_energy_pref():
 
 def test_select_top3_returns_three_even_with_value_duplicate_products():
     cands = [mk("A", 12_000_000, 300), mk("A", 12_000_000, 300),
-             mk("B", 11_000_000, 320), mk("C", 9_000_000, 330)]
+             mk("A", 12_000_000, 300), mk("A", 12_000_000, 300)]
     prof = NeedProfile(category="tu_lanh", prefs=["tiết kiệm điện"])
     top3 = select_top3(score_products(cands, prof))
     assert len(top3) == 3
