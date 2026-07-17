@@ -51,3 +51,9 @@ def test_resolve_price():
     # sale > orig là bất thường -> bỏ sale, dùng orig
     price, orig, sale = resolve_price(10000000.0, 12000000.0)
     assert price.value == 10000000 and sale.available is False
+
+
+def test_resolve_price_zero_original_not_treated_as_missing():
+    price, orig, sale = resolve_price(0.0, float("nan"))
+    assert orig.available is True and orig.value == 0
+    assert price.available is True and price.value == 0

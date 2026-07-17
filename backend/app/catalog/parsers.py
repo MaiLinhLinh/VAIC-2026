@@ -81,12 +81,12 @@ def parse_people(s) -> tuple[int, int] | None:
 def resolve_price(gia_goc, gia_km):
     orig_n = parse_number(gia_goc)
     sale_n = parse_number(gia_km)
-    orig = SourcedValue.of(int(orig_n), "catalog") if orig_n else SourcedValue.missing()
+    orig = SourcedValue.of(int(orig_n), "catalog") if orig_n is not None else SourcedValue.missing()
     sale_valid = sale_n is not None and sale_n > 0 and (orig_n is None or sale_n <= orig_n)
     sale = SourcedValue.of(int(sale_n), "catalog") if sale_valid else SourcedValue.missing()
     if sale_valid:
         price = SourcedValue.of(int(sale_n), "catalog", detail="giá khuyến mãi")
-    elif orig_n:
+    elif orig_n is not None:
         price = SourcedValue.of(int(orig_n), "catalog", detail="giá gốc")
     else:
         price = SourcedValue.missing()
