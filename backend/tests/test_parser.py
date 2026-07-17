@@ -31,3 +31,17 @@ def test_parse_need_merges_prior_keeping_known():
     np_ = parse_need("nhà mình 4 người", fake, prior=prior)
     assert np_.category == "tu_lanh" and np_.budget_max == 20_000_000
     assert np_.constraints == {"số người": [3, 4]}
+
+
+def test_invalid_llm_category_scrubbed_from_known():
+    fake = FakeLLM(json_responses=[{"category": "Tủ Lạnh", "prefs": [],
+                                    "constraints": {}, "known": ["category"]}])
+    np_ = parse_need("xin chào em", fake)   # invalid code + message has no detectable category
+    assert np_.category is None
+    assert "category" not in np_.known
+
+
+def test_decline_phrase_sets_flag():
+    fake = FakeLLM(json_responses=[{"category": "tu_lanh", "prefs": [], "constraints": {}, "known": ["category"]}])
+    np_ = parse_need("tu lanh gia re cu goi y dai di em", fake)
+    assert np_.constraints.get("_khong_muon_tra_loi") is True

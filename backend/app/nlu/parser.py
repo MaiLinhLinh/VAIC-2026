@@ -2,6 +2,7 @@ from __future__ import annotations
 from app.schemas import NeedProfile
 from app.llm.client import LLMClient
 from app.nlu.preprocess import expand_shorthand, parse_budget_vnd, detect_category
+from app.catalog.category_config import CATEGORY_CONFIGS
 
 NEED_SYSTEM_PROMPT = (
     "Bạn là bộ phân tích nhu cầu mua điện máy. Chỉ trích xuất những gì khách HÀNG NÓI RÕ. "
@@ -20,7 +21,7 @@ NEED_SCHEMA_HINT = (
     '"constraints": {}, "prefs": [], "demographics": {}, "known": []}'
 )
 
-_VALID_CODES = {"tu_lanh", "may_say", "may_rua_chen", "tu_mat", "dong_ho", "man_hinh"}
+_VALID_CODES = set(CATEGORY_CONFIGS.keys())
 _DECLINE_PHRASES = ["gợi ý đại", "goi y dai", "sao cũng được", "sao cung duoc", "tùy em", "tuy em", "gì cũng được"]
 
 
@@ -28,6 +29,9 @@ def _to_profile(data: dict) -> NeedProfile:
     cat = data.get("category")
     if cat not in _VALID_CODES:
         cat = None
+    known = list(data.get("known") or [])
+    if cat is None and "category" in known:
+        known.remove("category")
     return NeedProfile(
         category=cat,
         budget_min=data.get("budget_min"),
@@ -35,7 +39,7 @@ def _to_profile(data: dict) -> NeedProfile:
         constraints=data.get("constraints") or {},
         prefs=data.get("prefs") or [],
         demographics=data.get("demographics") or {},
-        known=list(data.get("known") or []),
+        known=known,
     )
 
 
