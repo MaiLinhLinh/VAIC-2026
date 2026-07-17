@@ -39,3 +39,19 @@ def test_why_not_group_for_energy_pref():
     grp = why_not_group(cands, prof)
     assert grp is not None and "không inverter" in grp.label
     assert "tiết kiệm điện" in grp.reason
+
+
+def test_select_top3_returns_three_even_with_value_duplicate_products():
+    cands = [mk("A", 12_000_000, 300), mk("A", 12_000_000, 300),
+             mk("B", 11_000_000, 320), mk("C", 9_000_000, 330)]
+    prof = NeedProfile(category="tu_lanh", prefs=["tiết kiệm điện"])
+    top3 = select_top3(score_products(cands, prof))
+    assert len(top3) == 3
+
+
+def test_matched_includes_present_but_low_field():
+    cands = [mk("A", 12_000_000, 300), mk("B", 11_000_000, 400)]  # B worst on consumption but present
+    prof = NeedProfile(category="tu_lanh", prefs=["tiết kiệm điện"])
+    scored = score_products(cands, prof)
+    b = next(s for s in scored if s.product.brand == "B")
+    assert "tiết kiệm điện" in b.matched
