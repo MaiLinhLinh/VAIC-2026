@@ -3,7 +3,7 @@ import math
 import re
 import pandas as pd
 from app.schemas import Product, SourcedValue
-from app.catalog.parsers import parse_number, parse_range, parse_measure, parse_bool, parse_people, resolve_price
+from app.catalog.parsers import parse_number, parse_measure, parse_bool, parse_people, resolve_price
 from app.catalog.category_config import CategoryConfig, CATEGORY_CONFIGS
 
 _SRC_SPEC = "thông số nhà sản xuất"
