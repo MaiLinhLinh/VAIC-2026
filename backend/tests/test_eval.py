@@ -25,3 +25,25 @@ def test_evaluate_reports_category_accuracy():
     assert m["category_acc"] == 1.0
     assert m["budget_acc"] == 1.0
     assert m["pref_recall"] == 1.0
+
+
+def test_hallucination_rate_flags_ungrounded_advice():
+    scenarios = [{"message": "tu lanh 20tr tiet kiem dien", "expect_category": "tu_lanh",
+                  "expect_budget_max": 20000000, "expect_prefs": ["tiết kiệm điện"]}]
+    llm = FakeLLM(
+        json_responses=[{"category": "tu_lanh", "budget_max": 20000000,
+                         "prefs": ["tiết kiệm điện"], "known": ["category", "budget_max", "prefs"]}],
+        text_responses=["Máy này chỉ 999.999đ, siêu rẻ!"])  # invented, ungrounded number
+    m = evaluate(scenarios, llm, _store())
+    assert m["hallucination_rate"] == 1.0
+
+
+def test_hallucination_rate_zero_when_advice_grounded():
+    scenarios = [{"message": "tu lanh 20tr tiet kiem dien", "expect_category": "tu_lanh",
+                  "expect_budget_max": 20000000, "expect_prefs": ["tiết kiệm điện"]}]
+    llm = FakeLLM(
+        json_responses=[{"category": "tu_lanh", "budget_max": 20000000,
+                         "prefs": ["tiết kiệm điện"], "known": ["category", "budget_max", "prefs"]}],
+        text_responses=["Em gợi ý máy phù hợp với nhu cầu của anh/chị."])  # no invented numbers
+    m = evaluate(scenarios, llm, _store())
+    assert m["hallucination_rate"] == 0.0
