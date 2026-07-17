@@ -34,9 +34,6 @@ def verify_advice(result: AdviceResult) -> AdviceResult:
     for n in extract_numbers(result.message):
         if n in allowed or n in _SAFE:
             continue
-        # cho phép khớp một phần (vd '12400000' xuất hiện khác định dạng)
-        if any(n in a or a in n for a in allowed):
-            continue
         warnings.append(f"Số chưa truy được nguồn: {n}")
     result.warnings = warnings
     return result

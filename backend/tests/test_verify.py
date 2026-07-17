@@ -25,3 +25,14 @@ def test_verify_passes_when_all_grounded():
     res = AdviceResult(message="Máy này giá 12.400.000đ, điện 300 kWh/năm.", cards=cards())
     out = verify_advice(res)
     assert is_grounded(out) and out.warnings == []
+
+
+def test_invented_number_containing_sourced_substring_is_flagged():
+    cards = [FactCard(title="t", lines=[
+        FactLine(label="Điện năng tiêu thụ", value="300 kWh/năm", source="thông số nhà sản xuất"),
+    ], missing=[])]
+    # "3.000.000" (canon 3000000) is invented; sourced "300" is a substring of it
+    res = AdviceResult(message="Máy này giá chỉ 3.000.000đ thôi.", cards=cards)
+    out = verify_advice(res)
+    assert not is_grounded(out)
+    assert any("3000000" in w for w in out.warnings)
