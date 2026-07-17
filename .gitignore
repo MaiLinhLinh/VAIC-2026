@@ -1,6 +1,10 @@
-.venv/
-node_modules/
 __pycache__/
 *.pyc
-.pytest_cache/
+.env
+.venv/
+venv/
+node_modules/
 backend/data/catalog.normalized.json
+dist/
+.pytest_cache/
+*.egg-info/
