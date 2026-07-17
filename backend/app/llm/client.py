@@ -12,21 +12,31 @@ class LLMClient(Protocol):
 
 
 class DeepSeekClient:
-    def __init__(self, base_url: str, api_key: str, model: str, timeout: float = 30.0):
+    def __init__(self, base_url: str, api_key: str, model: str,
+                 timeout: float = 60.0, max_tokens: int = 2048):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
         self.timeout = timeout
+        self.max_tokens = max_tokens
 
-    def _post(self, messages: list[dict], json_mode: bool) -> str:
-        payload = {"model": self.model, "messages": messages, "temperature": 0.2}
-        if json_mode:
-            payload["response_format"] = {"type": "json_object"}
+    def _post(self, messages: list[dict]) -> str:
+        # NOTE: this endpoint (FPT Cloud, DeepSeek-V4-Flash reasoning model) returns
+        # content=None when response_format={"type":"json_object"} is sent, so we do NOT
+        # use it — the prompt requests JSON and _extract_json robustly parses it. Reasoning
+        # models also emit a separate reasoning_content field we intentionally ignore.
+        payload = {"model": self.model, "messages": messages,
+                   "temperature": 0.2, "max_tokens": self.max_tokens}
         headers = {"Authorization": f"Bearer {self.api_key}"}
         with httpx.Client(timeout=self.timeout) as c:
             r = c.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
             r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"]
+            content = r.json()["choices"][0]["message"].get("content")
+            if content is None:
+                raise ValueError(
+                    "LLM trả về content rỗng (null). Kiểm tra endpoint/model, "
+                    "hoặc tăng max_tokens nếu reasoning model dùng hết token.")
+            return content
 
     @staticmethod
     def _extract_json(raw: str) -> dict:
@@ -41,13 +51,14 @@ class DeepSeekClient:
         return json.loads(raw)
 
     def complete_json(self, system: str, user: str, schema_hint: str = "") -> dict:
-        sys = system + ("\n\nTrả về JSON hợp lệ." + (f" Schema:\n{schema_hint}" if schema_hint else ""))
+        sys = system + ("\n\nCHỈ trả về một object JSON hợp lệ, không kèm giải thích hay văn bản thừa."
+                        + (f" Schema:\n{schema_hint}" if schema_hint else ""))
         return self._extract_json(self._post(
-            [{"role": "system", "content": sys}, {"role": "user", "content": user}], json_mode=True))
+            [{"role": "system", "content": sys}, {"role": "user", "content": user}]))
 
     def complete_text(self, system: str, user: str) -> str:
         return self._post(
-            [{"role": "system", "content": system}, {"role": "user", "content": user}], json_mode=False)
+            [{"role": "system", "content": system}, {"role": "user", "content": user}])
 
 
 class FakeLLM:
