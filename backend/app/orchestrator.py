@@ -12,10 +12,10 @@ from app.advice.verify import verify_advice, is_grounded
 from app.advice.provenance import build_fact_card
 from app.advice.budget import budget_alternatives, describe_tradeoff
 
-_CHEAPER_KW = ["re hon", "gia thap", "bot tien", "giam ngan sach", "ha ngan sach",
-               "dat qua", "mac qua", "cao qua", "re hon nua"]
-_PRICIER_KW = ["cao cap hon", "xin hon", "tot hon nua", "chi them", "dat hon nua",
-               "nang ngan sach", "tang ngan sach"]
+_CHEAPER_KW = ["re hon", "gia re hon", "gia thap hon", "bot tien", "giam ngan sach",
+               "ha ngan sach", "dat qua", "mac qua", "re hon nua", "gia mem hon"]
+_PRICIER_KW = ["cao cap hon", "dat hon nua", "nang ngan sach", "tang ngan sach",
+               "chi them tien", "loai xin hon"]
 
 
 class ChatState(BaseModel):
@@ -109,4 +109,6 @@ class Orchestrator:
             lines.append("- " + describe_tradeoff(a, state.last_top_price))
         # Message is built deterministically from catalog prices (format_vnd) -> grounded by construction.
         advice = AdviceResult(message="\n".join(lines), cards=cards, assumptions=[], warnings=[])
+        if alts[0].product.price.available:
+            state.last_top_price = alts[0].product.price.value
         return state, TurnResult(reply=advice.message, stage="recommended", advice=advice, need=state.profile)

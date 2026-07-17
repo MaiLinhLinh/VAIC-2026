@@ -66,3 +66,18 @@ def test_budget_down_intent_returns_cheaper_alternatives():
     state, res2 = orch.handle_turn(state, "co cach nao re hon khong em")
     assert res2.stage == "recommended" and res2.advice is not None
     assert any("7.000.000" in l.value for c in res2.advice.cards for l in c.lines)
+
+
+def test_budget_up_intent_returns_pricier_alternatives():
+    st = ProductStore([mk("A", 12_000_000, 300), mk("B", 15_000_000, 250), mk("C", 18_000_000, 240)])
+    llm = FakeLLM(
+        json_responses=[{"category": "tu_lanh", "budget_max": 13000000, "constraints": {"số người": [3, 4]},
+                         "prefs": [], "known": ["category", "budget_max", "constraints"]}],
+        text_responses=["Em gợi ý máy phù hợp."])
+    orch = Orchestrator(st, llm)
+    state = ChatState(profile=NeedProfile(), asked=[], stage="collecting")
+    state, res = orch.handle_turn(state, "tu lanh cho nha 4 nguoi tam 13 trieu")
+    assert res.stage == "recommended" and state.last_top_price == 12_000_000
+    state, res2 = orch.handle_turn(state, "co loai nao cao cap hon khong em")
+    assert res2.stage == "recommended" and res2.advice is not None
+    assert any("15.000.000" in l.value for c in res2.advice.cards for l in c.lines)
