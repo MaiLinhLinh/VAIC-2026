@@ -25,10 +25,14 @@ def build_fact_card(sp: ScoredProduct, profile: NeedProfile) -> FactCard:
         missing.append("giá")
 
     for field, sv in p.specs.items():
-        if sv.available and sv.value is not None and _relevant(field, sp):
+        if not _relevant(field, sp):
+            continue
+        if sv.available and sv.value is not None:
             unit = f" {sv.unit}" if sv.unit else ""
             lines.append(FactLine(label=field, value=f"{sv.value}{unit}",
                                   source=sv.provenance.source if sv.provenance else "thông số nhà sản xuất"))
+        else:
+            missing.append(field)
 
     missing.extend(_ALWAYS_MISSING)
     return FactCard(title=f"Vì sao em đề xuất {p.display_name}?", lines=lines, missing=missing)

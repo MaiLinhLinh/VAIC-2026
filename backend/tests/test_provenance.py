@@ -35,3 +35,17 @@ def test_facts_for_llm_only_contains_sourced_values():
     assert "12.400.000đ" in facts
     assert "300" in facts
     assert "tồn kho" in facts.lower()   # nêu rõ phần chưa có dữ liệu
+
+
+def test_matched_but_unavailable_spec_disclosed_in_missing():
+    p = Product(category="Tủ lạnh", category_code="tu_lanh", model_code="X", sku="X",
+                brand="Daikin", display_name="Tủ lạnh Daikin",
+                price=SourcedValue.of(12_000_000, "catalog"),
+                original_price=SourcedValue.of(12_000_000, "catalog"),
+                sale_price=SourcedValue.missing(),
+                specs={"Điện năng tiêu thụ": SourcedValue.missing()},  # relevant to "tiết kiệm điện" but absent
+                spec_doc="", promo_text=None, raw={})
+    sp = ScoredProduct(product=p, score=1.0, breakdown={"tiết kiệm điện": 0.0}, matched=["tiết kiệm điện"])
+    prof = NeedProfile(category="tu_lanh", prefs=["tiết kiệm điện"])
+    card = build_fact_card(sp, prof)
+    assert "Điện năng tiêu thụ" in card.missing
