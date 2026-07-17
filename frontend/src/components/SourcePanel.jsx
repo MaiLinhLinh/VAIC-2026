@@ -10,7 +10,7 @@ export default function SourcePanel({ card }) {
       {open && (
         <div className="source-body">
           <ul>
-            {card.lines.map((l, i) => (
+            {(card.lines || []).map((l, i) => (
               <li key={i}><b>{l.label}:</b> {l.value} <span className="src">[nguồn: {l.source}]</span></li>
             ))}
           </ul>
