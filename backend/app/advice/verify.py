@@ -18,6 +18,8 @@ def extract_numbers(text: str) -> list[str]:
 def allowed_numbers(cards: list[FactCard]) -> set[str]:
     allowed: set[str] = set()
     for c in cards:
+        for n in extract_numbers(c.title):
+            allowed.add(n)
         for l in c.lines:
             for n in extract_numbers(l.value):
                 allowed.add(n)

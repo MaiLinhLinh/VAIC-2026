@@ -49,3 +49,16 @@ def test_matched_but_unavailable_spec_disclosed_in_missing():
     prof = NeedProfile(category="tu_lanh", prefs=["tiết kiệm điện"])
     card = build_fact_card(sp, prof)
     assert "Điện năng tiêu thụ" in card.missing
+
+
+def test_whole_float_spec_rendered_without_decimal():
+    p = Product(category="Tủ lạnh", category_code="tu_lanh", model_code="X", sku="X",
+                brand="LG", display_name="Tủ lạnh LG",
+                price=SourcedValue.of(12_000_000, "catalog"),
+                original_price=SourcedValue.of(12_000_000, "catalog"), sale_price=SourcedValue.missing(),
+                specs={"Điện năng tiêu thụ": SourcedValue.of(436.0, "thông số nhà sản xuất", unit="kWh/năm")},
+                spec_doc="", promo_text=None, raw={})
+    sp = ScoredProduct(product=p, score=1.0, breakdown={"tiết kiệm điện": 1.0}, matched=["tiết kiệm điện"])
+    card = build_fact_card(sp, NeedProfile(category="tu_lanh", prefs=["tiết kiệm điện"]))
+    vals = [l.value for l in card.lines]
+    assert "436 kWh/năm" in vals and "436.0 kWh/năm" not in vals

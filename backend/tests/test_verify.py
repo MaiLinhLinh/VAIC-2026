@@ -36,3 +36,13 @@ def test_invented_number_containing_sourced_substring_is_flagged():
     out = verify_advice(res)
     assert not is_grounded(out)
     assert any("3000000" in w for w in out.warnings)
+
+
+def test_title_and_whole_float_numbers_are_grounded():
+    cards = [FactCard(title="Vì sao em đề xuất Tủ lạnh LG 368 lít?", lines=[
+        FactLine(label="Giá", value="12.000.000đ", source="catalog"),
+        FactLine(label="Điện năng tiêu thụ", value="436 kWh/năm", source="thông số nhà sản xuất"),
+    ], missing=[])]
+    res = AdviceResult(message="Tủ lạnh LG 368 lít, giá 12.000.000đ, điện 436 kWh/năm.", cards=cards)
+    out = verify_advice(res)
+    assert is_grounded(out)

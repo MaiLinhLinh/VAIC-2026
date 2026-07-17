@@ -42,7 +42,10 @@ def _build_name(template: str, row: dict, brand: str) -> str:
         key = m.group(1)
         if key == "brand":
             return brand
-        return _text(row.get(key)) or ""
+        t = _text(row.get(key))
+        if t is None or t.lower().startswith("không"):
+            return ""
+        return t.split("|")[0].strip()
     name = re.sub(r"\{([^}]+)\}", repl, template)
     return re.sub(r"\s+", " ", name).strip()
 

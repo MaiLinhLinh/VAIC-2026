@@ -29,7 +29,8 @@ def build_fact_card(sp: ScoredProduct, profile: NeedProfile) -> FactCard:
             continue
         if sv.available and sv.value is not None:
             unit = f" {sv.unit}" if sv.unit else ""
-            lines.append(FactLine(label=field, value=f"{sv.value}{unit}",
+            val = int(sv.value) if isinstance(sv.value, float) and sv.value.is_integer() else sv.value
+            lines.append(FactLine(label=field, value=f"{val}{unit}",
                                   source=sv.provenance.source if sv.provenance else "thông số nhà sản xuất"))
         else:
             missing.append(field)

@@ -32,3 +32,13 @@ def test_normalize_missing_price_marks_unavailable():
     p = normalize_row(row, cfg)
     assert p.price.available is False and p.price.note == "chưa có dữ liệu"
     assert p.number("Độ ồn") == 46
+
+
+def test_display_name_skips_negatives_and_multivalue():
+    cfg = config_for("tu_lanh")
+    row = {"model_code": 1, "sku": 2, "brand": "Aqua",
+           "Công nghệ tiết kiệm điện": "Không có", "Dung tích tổng": "53 lít",
+           "giá gốc": 5_000_000.0, "giá khuyến mãi": float("nan")}
+    p = normalize_row(row, cfg)
+    assert "Không" not in p.display_name
+    assert "Aqua" in p.display_name and "53" in p.display_name
