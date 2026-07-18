@@ -2,10 +2,12 @@ import { useState } from 'react'
 
 export default function SourcePanel({ card }) {
   const [open, setOpen] = useState(false)
+  const isDetail = card.title?.startsWith('Thông tin chi tiết')
+  const openLabel = isDetail ? '▼ Xem thông số chi tiết' : '▼ Vì sao em đề xuất máy này?'
   return (
     <div className="source">
       <button className="why-btn" onClick={() => setOpen(!open)}>
-        {open ? '▲ Ẩn nguồn' : '▼ Vì sao em đề xuất máy này?'}
+        {open ? '▲ Ẩn nguồn' : openLabel}
       </button>
       {open && (
         <div className="source-body">
