@@ -13,6 +13,23 @@ def build_fact_card(sp: ScoredProduct, profile: NeedProfile) -> FactCard:
     lines: list[FactLine] = []
     missing: list[str] = []
 
+    # Extract productidweb
+    productidweb = p.productidweb
+    if not productidweb and p.raw:
+        raw_id = p.raw.get("productidweb")
+        if raw_id is not None:
+            s_val = str(raw_id).strip()
+            if s_val.endswith('.0'):
+                s_val = s_val[:-2]
+            if s_val.lower() not in ('nan', 'none', 'null', ''):
+                productidweb = s_val
+
+    # Fetch image and link from crawler
+    product_link, image_url = None, None
+    if productidweb:
+        from app.advice.crawler import fetch_product_info
+        product_link, image_url = fetch_product_info(productidweb)
+
     if p.price.available:
         detail = p.price.provenance.detail if p.price.provenance else None
         lines.append(FactLine(label="Giá", value=format_vnd(int(p.price.value)),
@@ -36,7 +53,11 @@ def build_fact_card(sp: ScoredProduct, profile: NeedProfile) -> FactCard:
             missing.append(field)
 
     missing.extend(_ALWAYS_MISSING)
-    return FactCard(title=f"Vì sao em đề xuất {p.display_name}?", lines=lines, missing=missing)
+    card = FactCard(title=f"Vì sao em đề xuất {p.display_name}?", lines=lines, missing=missing,
+                    productidweb=productidweb, image_url=image_url, product_link=product_link)
+    from app.advice.crawler import enrich_card_with_detail
+    enrich_card_with_detail(card)
+    return card
 
 
 def _relevant(field: str, sp: ScoredProduct) -> bool:

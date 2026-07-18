@@ -77,9 +77,51 @@ def build_reco_card(row: Dict[str, Any], priority_features: List[str]) -> FactCa
 
     if row.get("gift_promo"):
         lines.append(FactLine(label="Khuyến mãi/quà kèm", value=str(row["gift_promo"]),
-                              source="khuyến mãi (catalog)"))
+                               source="khuyến mãi (catalog)"))
     missing.extend(_ALWAYS_MISSING)
-    return FactCard(title=f"Vì sao em đề xuất {name}?", lines=lines, missing=missing)
+
+    # Extract productidweb
+    productidweb = row.get("productidweb")
+    if not productidweb:
+        table_name = row.get("category_table")
+        sku = row.get("sku")
+        model_code = row.get("model_code")
+        if table_name and (sku or model_code):
+            import sqlite3
+            from app.config import get_settings
+            try:
+                conn = sqlite3.connect(get_settings().agent_db_path)
+                cursor = conn.cursor()
+                row_db = None
+                if sku:
+                    cursor.execute(f"SELECT productidweb FROM {table_name} WHERE sku = ?", (sku,))
+                    row_db = cursor.fetchone()
+                if (row_db is None or row_db[0] is None) and model_code:
+                    cursor.execute(f"SELECT productidweb FROM {table_name} WHERE model_code = ?", (model_code,))
+                    row_db = cursor.fetchone()
+                if row_db and row_db[0] is not None:
+                    productidweb = row_db[0]
+                conn.close()
+            except Exception:
+                pass
+
+    if productidweb is not None:
+        productidweb = str(productidweb).strip()
+        if productidweb.endswith('.0'):
+            productidweb = productidweb[:-2]
+        if productidweb.lower() in ('nan', 'none', 'null', ''):
+            productidweb = None
+
+    product_link, image_url = None, None
+    if productidweb:
+        from app.advice.crawler import fetch_product_info
+        product_link, image_url = fetch_product_info(productidweb)
+
+    card = FactCard(title=f"Vì sao em đề xuất {name}?", lines=lines, missing=missing,
+                    productidweb=productidweb, image_url=image_url, product_link=product_link)
+    from app.advice.crawler import enrich_card_with_detail
+    enrich_card_with_detail(card)
+    return card
 
 
 def build_detail_card(row: Dict[str, Any]) -> FactCard:
@@ -97,6 +139,48 @@ def build_detail_card(row: Dict[str, Any]) -> FactCard:
         lines.append(FactLine(label=k, value=v, source="thông số nhà sản xuất"))
     if row.get("gift_promo"):
         lines.append(FactLine(label="Khuyến mãi/quà kèm", value=str(row["gift_promo"]),
-                              source="khuyến mãi (catalog)"))
+                               source="khuyến mãi (catalog)"))
     missing.extend(_ALWAYS_MISSING)
-    return FactCard(title=f"Thông tin chi tiết: {name}", lines=lines, missing=missing)
+
+    # Extract productidweb
+    productidweb = row.get("productidweb")
+    if not productidweb:
+        table_name = row.get("category_table")
+        sku = row.get("sku")
+        model_code = row.get("model_code")
+        if table_name and (sku or model_code):
+            import sqlite3
+            from app.config import get_settings
+            try:
+                conn = sqlite3.connect(get_settings().agent_db_path)
+                cursor = conn.cursor()
+                row_db = None
+                if sku:
+                    cursor.execute(f"SELECT productidweb FROM {table_name} WHERE sku = ?", (sku,))
+                    row_db = cursor.fetchone()
+                if (row_db is None or row_db[0] is None) and model_code:
+                    cursor.execute(f"SELECT productidweb FROM {table_name} WHERE model_code = ?", (model_code,))
+                    row_db = cursor.fetchone()
+                if row_db and row_db[0] is not None:
+                    productidweb = row_db[0]
+                conn.close()
+            except Exception:
+                pass
+
+    if productidweb is not None:
+        productidweb = str(productidweb).strip()
+        if productidweb.endswith('.0'):
+            productidweb = productidweb[:-2]
+        if productidweb.lower() in ('nan', 'none', 'null', ''):
+            productidweb = None
+
+    product_link, image_url = None, None
+    if productidweb:
+        from app.advice.crawler import fetch_product_info
+        product_link, image_url = fetch_product_info(productidweb)
+
+    card = FactCard(title=f"Thông tin chi tiết: {name}", lines=lines, missing=missing,
+                    productidweb=productidweb, image_url=image_url, product_link=product_link)
+    from app.advice.crawler import enrich_card_with_detail
+    enrich_card_with_detail(card)
+    return card
