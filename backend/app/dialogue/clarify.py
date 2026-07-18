@@ -21,7 +21,8 @@ def _declined(profile: NeedProfile) -> bool:
 
 def _slot_filled(profile: NeedProfile, slot: SlotSpec) -> bool:
     if slot.slot == "ngân sách":
-        return profile.budget_min is not None or profile.budget_max is not None
+        return (profile.budget_min is not None or profile.budget_max is not None
+                or "giá thấp" in profile.prefs)
     if slot.slot == "ưu tiên":
         return bool(profile.prefs)
     if any(canonical_constraint_key(key) == slot.maps_to
@@ -74,7 +75,8 @@ def _preference_question(profile: NeedProfile) -> str:
 
 def _optional_slots(profile: NeedProfile, asked: list[str]) -> list[SlotSpec]:
     slots = _unfilled_slots(profile, critical=False, asked=set(asked))
-    if not profile.prefs and "ưu tiên" not in asked:
+    has_capability_requirement = profile.constraints.get("thực hiện cuộc gọi") is True
+    if not profile.prefs and not has_capability_requirement and "ưu tiên" not in asked:
         slots.append(SlotSpec("ưu tiên", _preference_question(profile), 1, "prefs", "text"))
     return slots
 
@@ -114,7 +116,8 @@ def next_question(profile: NeedProfile, asked: list[str],
         return _question(profile, slot) if slot else None
 
     slots = missing_critical_slots(profile, asked)
-    if not slots and asked and not profile.prefs:
+    if (not slots and asked and not profile.prefs
+            and profile.constraints.get("thực hiện cuộc gọi") is not True):
         slots = _optional_slots(profile, asked)
     return _question(profile, slots[0]) if slots else None
 

@@ -38,6 +38,24 @@ def test_resolve_by_superlative_price():
     assert resolve_product("cai dat nhat the nao", prods).brand == "Sam"
 
 
+def test_resolve_by_explicit_mentioned_price():
+    prods = [mk("Samsung", 150_000, 1, 1), mk("Zwatch", 490_000, 1, 1)]
+    assert resolve_product("cái 150k có nghe gọi được không", prods).brand == "Samsung"
+
+
+def test_call_detail_answer_is_deterministic_and_fails_closed():
+    product = mk("Samsung", 150_000, 1, 1)
+    product.specs["Thực hiện cuộc gọi"] = SourcedValue.of("Không", "thông số nhà sản xuất")
+    product.raw["Thực hiện cuộc gọi"] = "Không"
+    fake = FakeLLM(text_responses=["Bịa là máy này nghe gọi được."])
+
+    result = answer_about_product(product, "150k mà nghe gọi được à?", fake)
+
+    assert "Dạ không" in result.message
+    assert "catalog ghi" in result.message.lower()
+    assert fake.calls == []
+
+
 def test_resolve_none_when_no_reference():
     prods = [mk("Sam", 1, 1, 1), mk("Casper", 1, 1, 1)]
     assert resolve_product("con nhu the nao nhi", prods) is None

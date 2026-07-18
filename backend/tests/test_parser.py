@@ -279,3 +279,34 @@ def test_relative_large_screen_answer_becomes_soft_preference():
 
     assert np_.prefs == ["chơi game", "màn hình lớn"]
     assert "kích thước" not in np_.constraints
+
+
+def test_relative_low_price_answer_becomes_soft_preference():
+    prior = NeedProfile(category="tu_lanh", constraints={"số người": [5, 5]})
+    fake = FakeLLM(json_responses=[{
+        "category": None,
+        "constraints": {},
+        "prefs": [],
+        "known": [],
+    }])
+
+    np_ = parse_need("càng rẻ càng tốt", fake, prior=prior)
+
+    assert np_.prefs == ["giá thấp"]
+    assert np_.budget_min is None
+    assert np_.budget_max is None
+
+
+def test_watch_calling_is_a_hard_grounded_constraint():
+    prior = NeedProfile(category="dong_ho", demographics={"đối tượng": "trẻ em"})
+    fake = FakeLLM(json_responses=[{
+        "category": None,
+        "constraints": {},
+        "prefs": [],
+        "known": [],
+    }])
+
+    np_ = parse_need("1 triệu thôi, nghe gọi được", fake, prior=prior)
+
+    assert np_.budget_max == 1_000_000
+    assert np_.constraints["thực hiện cuộc gọi"] is True

@@ -27,6 +27,16 @@ def score_products(candidates: list[Product], profile: NeedProfile) -> list[Scor
     cfg = config_for(profile.category)
     scored = [ScoredProduct(product=p, score=0.0, breakdown={}, matched=[]) for p in candidates]
     for pref in profile.prefs:
+        if pref == "giá thấp":
+            col = [p.price.value if p.price.available else None for p in candidates]
+            norm = _normalize(col, "min")
+            for i, sp in enumerate(scored):
+                contrib = norm.get(i, 0.0)
+                sp.score += contrib
+                if candidates[i].price.available:
+                    sp.breakdown[pref] = contrib
+                    sp.matched.append(pref)
+            continue
         signals = cfg.pref_lexicon.get(pref)
         if not signals:
             continue

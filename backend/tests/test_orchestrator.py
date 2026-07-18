@@ -62,6 +62,26 @@ def mk_monitor(brand, price, size, response_time):
     )
 
 
+def mk_watch(brand, price, call_status):
+    call_value = (SourcedValue.of(call_status, "thông số nhà sản xuất")
+                  if call_status is not None else SourcedValue.missing())
+    return Product(
+        category="Đồng hồ thông minh",
+        category_code="dong_ho",
+        model_code=brand,
+        sku=brand,
+        brand=brand,
+        display_name=f"Đồng hồ {brand}",
+        price=SourcedValue.of(price, "catalog"),
+        original_price=SourcedValue.of(price, "catalog"),
+        sale_price=SourcedValue.missing(),
+        specs={"Thực hiện cuộc gọi": call_value},
+        spec_doc="",
+        promo_text=None,
+        raw={"Thực hiện cuộc gọi": call_status} if call_status is not None else {},
+    )
+
+
 def store():
     return ProductStore([mk("A", 12_000_000, 300), mk("B", 11_000_000, 400), mk("C", 9_000_000, 380)])
 
@@ -261,3 +281,129 @@ def test_large_screen_answer_completes_clarification_instead_of_repeating_questi
     assert len(res4.advice.cards) == 3
     assert res4.advice.warnings == []
     assert state.profile.prefs == ["chơi game", "màn hình lớn"]
+
+
+def test_low_price_answer_completes_budget_clarification_and_recommends():
+    llm = FakeLLM(
+        json_responses=[{
+            "category": None,
+            "budget_min": None,
+            "budget_max": None,
+            "constraints": {},
+            "prefs": [],
+            "known": [],
+        }],
+        text_responses=["Dạ em ưu tiên các mẫu có giá thấp nhất phù hợp cho nhà 5 người."],
+    )
+    products = [mk("A", 12_000_000, 300), mk("B", 11_000_000, 400), mk("C", 9_000_000, 380)]
+    for product in products:
+        product.specs["Số người sử dụng"] = SourcedValue.of(
+            [3, 5], "thông số nhà sản xuất"
+        )
+    orch = Orchestrator(ProductStore(products), llm)
+    state = ChatState(
+        profile=NeedProfile(category="tu_lanh", constraints={"số người": [5, 5]}),
+        asked=["số người", "ngân sách"],
+        stage="collecting",
+    )
+
+    state, result = orch.handle_turn(state, "càng rẻ càng tốt")
+
+    assert result.stage == "recommended"
+    assert result.question is None
+    assert result.advice is not None and result.advice.cards
+    assert state.profile.prefs == ["giá thấp"]
+    assert state.last_products[0].brand == "C"
+
+
+def test_watch_call_flow_excludes_products_without_confirmed_calling():
+    products = [
+        mk_watch("Zobo", 990_000, "Nghe gọi ngay trên đồng hồ"),
+        mk_watch("Samsung", 150_000, "Không"),
+        mk_watch("Zwatch", 490_000, "Nghe gọi ngay trên đồng hồ"),
+        mk_watch("Unknown", 300_000, None),
+    ]
+    llm = FakeLLM(json_responses=[{
+        "category": None, "budget_max": None, "constraints": {}, "prefs": [], "known": [],
+    }])
+    orch = Orchestrator(ProductStore(products), llm)
+    state = ChatState(
+        profile=NeedProfile(category="dong_ho", demographics={"đối tượng": "trẻ em"}),
+        asked=["ngân sách"], stage="collecting",
+    )
+
+    state, result = orch.handle_turn(state, "1 triệu thôi, nghe gọi được")
+
+    assert result.stage == "recommended" and result.advice is not None
+    assert {p.brand for p in state.last_products} == {"Zobo", "Zwatch"}
+    assert "Samsung" not in result.reply
+    assert "Nghe gọi ngay trên đồng hồ" in result.reply
+    assert len(llm.calls) == 1
+    assert llm.calls[0][1] == "1 triệu thôi, nghe gọi được"
+
+
+def test_call_capability_fallback_suggests_nearest_confirmed_option_over_budget():
+    products = [
+        mk_watch("CheapNoCall", 300_000, "Không"),
+        mk_watch("NearestCall", 800_000, "Nghe gọi độc lập"),
+    ]
+    orch = Orchestrator(ProductStore(products), FakeLLM(json_responses=[{}]))
+    state = ChatState(
+        profile=NeedProfile(category="dong_ho", demographics={"đối tượng": "trẻ em"}),
+        asked=["ngân sách"], stage="collecting",
+    )
+
+    state, result = orch.handle_turn(state, "500k thôi, nghe gọi được")
+
+    assert result.stage == "recommended"
+    assert "chưa tìm được" in result.reply.lower()
+    assert "NearestCall" in result.reply and "800.000đ" in result.reply
+    assert "cao hơn ngân sách 300.000đ" in result.reply
+    assert "CheapNoCall" not in result.reply
+
+
+def test_call_capability_fallback_labels_related_products_as_not_matching():
+    products = [
+        mk_watch("NoCall", 400_000, "Không"),
+        mk_watch("Unknown", 500_000, None),
+    ]
+    orch = Orchestrator(ProductStore(products), FakeLLM(json_responses=[{}]))
+    state = ChatState(
+        profile=NeedProfile(category="dong_ho", demographics={"đối tượng": "trẻ em"}),
+        asked=["ngân sách"], stage="collecting",
+    )
+
+    state, result = orch.handle_turn(state, "1 triệu thôi, nghe gọi được")
+
+    assert "chưa có đồng hồ nào được xác nhận" in result.reply.lower()
+    assert "mẫu liên quan" in result.reply.lower()
+    assert "không được coi là đáp ứng yêu cầu nghe gọi" in result.reply.lower()
+
+
+def test_adding_new_requirement_refilters_instead_of_asking_which_product():
+    def nfc_watch(brand, price, connect):
+        p = mk_watch(brand, price, "Nghe gọi độc lập")
+        p.raw["Kết nối"] = connect
+        return p
+
+    products = [
+        nfc_watch("Samsung", 150_000, "Bluetooth v5.0"),
+        nfc_watch("Imoo", 2_590_000, "Bluetooth v5.0"),
+        nfc_watch("OPPO", 1_990_000, "Bluetooth v5.0 | NFC"),
+    ]
+    llm = FakeLLM(
+        json_responses=[{"constraints": {"nfc": True}, "known": ["constraints"]}],
+        text_responses=["Dạ, mẫu có NFC trong catalog là Đồng hồ OPPO giá 1.990.000đ ạ."],
+    )
+    orch = Orchestrator(ProductStore(products), llm)
+    state = ChatState(
+        profile=NeedProfile(category="dong_ho", budget_max=5_000_000,
+                            demographics={"đối tượng": "trẻ em"}, prefs=["giá thấp"]),
+        asked=["ngân sách"], stage="recommended", last_products=products,
+    )
+
+    state, result = orch.handle_turn(state, "thế tôi muốn có thêm NFC thì sao")
+
+    assert "tìm hiểu kỹ máy nào" not in result.reply
+    assert result.stage == "recommended"
+    assert [p.brand for p in state.last_products] == ["OPPO"]

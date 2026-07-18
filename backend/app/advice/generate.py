@@ -3,6 +3,7 @@ from app.schemas import Recommendation, NeedProfile, AdviceResult
 from app.llm.client import LLMClient
 from app.advice.provenance import build_fact_card, facts_for_llm, format_vnd
 from app.advice.compare import build_comparison
+from app.catalog.capabilities import call_status, requires_call
 
 ADVICE_SYSTEM_PROMPT = (
     "Bạn là nhân viên tư vấn điện máy thân thiện, nói tiếng Việt bình dân (không dùng thuật ngữ "
@@ -81,6 +82,20 @@ def generate_advice(reco: Recommendation, profile: NeedProfile, llm: LLMClient) 
         return AdviceResult(message=_empty_message(profile), cards=[], assumptions=reco.assumptions, warnings=[])
 
     cards = [build_fact_card(sp, profile) for sp in reco.top3]
+    if requires_call(profile):
+        lines = ["Dạ, em chỉ đưa các mẫu có dữ liệu catalog xác nhận khả năng nghe gọi:"]
+        for i, sp in enumerate(reco.top3, 1):
+            product = sp.product
+            price = format_vnd(int(product.price.value)) if product.price.available else "chưa có dữ liệu giá"
+            lines.append(
+                f"{i}. {product.display_name} — giá {price}; "
+                f"khả năng gọi: {call_status(product)}."
+            )
+        lines.append("Em không coi mẫu thiếu dữ liệu hoặc được ghi 'Không' là có chức năng này ạ.")
+        return AdviceResult(
+            message="\n".join(lines), cards=cards, assumptions=reco.assumptions,
+            warnings=[], comparison=build_comparison(reco.top3, profile),
+        )
     system, user = advice_prompt(reco, profile, cards)
     message = llm.complete_text(system, user)
     comparison = build_comparison(reco.top3, profile)

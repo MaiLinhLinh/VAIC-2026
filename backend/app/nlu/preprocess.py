@@ -30,6 +30,7 @@ _CONSTRAINT_ALIASES = (
     ("mục đích", ("muc dich", "muc dich su dung", "nhu cau su dung")),
     ("kích thước", ("kich thuoc", "kich thuoc man hinh", "kich co man hinh")),
     ("kiểu dáng", ("kieu dang", "loai tu")),
+    ("thực hiện cuộc gọi", ("thuc hien cuoc goi", "nghe goi", "goi dien")),
 )
 
 _PURPOSES = (
@@ -177,12 +178,75 @@ def parse_monitor_purpose(value: str) -> str | None:
     return next((purpose for purpose, pattern in _PURPOSES if _first_positive_match(flat, pattern)), None)
 
 
+def wants_call(value: str) -> bool:
+    """Detect an explicit requirement/question for two-way calling."""
+    return bool(_first_positive_match(
+        _flat(value),
+        r"\b(?:nghe goi(?: (?:duoc|doc lap|ngay tren dong ho))?|"
+        r"(?:co the )?goi (?:dien|duoc|cho|ve)|dam thoai|thuc hien cuoc goi)\b",
+    ))
+
+
+def prefers_low_price(value: str) -> bool:
+    """Return True for a qualitative price minimum, not a numeric budget."""
+    return bool(_first_positive_match(
+        _flat(value),
+        r"\b(?:cang (?:re|it tien) cang tot|gia cang (?:re|thap) cang tot|"
+        r"(?:re|gia (?:re|thap|mem)) nhat(?: co the)?|"
+        r"(?:uu tien )?gia (?:re|thap|mem))\b",
+    ))
+
+
 def prefers_large_screen(value: str) -> bool:
     return bool(_first_positive_match(
         _flat(value),
-        r"\b(?:cang (?:to|lon) cang tot|(?:to|lon) nhat|man hinh (?:to|lon)|"
-        r"(?:kich thuoc|kich co|size) (?:to|lon))\b",
+        r"\b(?:(?:man(?: hinh)? )?cang (?:to|lon|rong) cang tot|"
+        r"(?:man hinh )?(?:to|lon|rong) nhat(?: co the)?|"
+        r"man hinh (?:to|lon|rong)|"
+        r"(?:kich thuoc|kich co|size) (?:cang )?(?:to|lon|rong)(?: cang tot)?)\b",
     ))
+
+
+def extract_optimization_preferences(value: str, category: str | None) -> list[str]:
+    """Normalize qualitative min/max answers into preferences the ranker understands.
+
+    These phrases often answer a clarification without supplying a number, e.g.
+    ``càng rẻ càng tốt`` or ``pin càng lâu càng tốt``.  Keeping the mapping here
+    avoids one-off handling in the dialogue layer for every wording variant.
+    """
+    flat = _flat(value)
+    preferences: list[str] = []
+
+    def add(label: str, pattern: str) -> None:
+        if _first_positive_match(flat, pattern):
+            preferences.append(label)
+
+    if prefers_low_price(value):
+        preferences.append("giá thấp")
+
+    if category in {"man_hinh", "dong_ho"} and prefers_large_screen(value):
+        preferences.append("màn hình lớn")
+
+    if category in {"tu_lanh", "tu_mat"}:
+        add("dung tích lớn", r"\b(?:(?:dung tich|suc chua) cang (?:lon|nhieu) cang tot|"
+                              r"(?:dung tich|suc chua) (?:lon|nhieu) nhat(?: co the)?)\b")
+    if category == "may_say":
+        add("tải lớn", r"\b(?:(?:tai|khoi luong) cang (?:lon|nhieu) cang tot|"
+                        r"(?:tai|khoi luong) (?:lon|nhieu) nhat(?: co the)?)\b")
+
+    add("tiết kiệm điện", r"\b(?:cang (?:tiet kiem dien|it ton dien) cang tot|"
+                            r"dien(?: nang)? cang (?:it|thap) cang tot|"
+                            r"(?:tiet kiem dien|it ton dien) nhat(?: co the)?)\b")
+    add("ít ồn", r"\b(?:cang (?:it on|em|yen tinh) cang tot|"
+                 r"(?:it on|em|yen tinh) nhat(?: co the)?)\b")
+    add("tiết kiệm nước", r"\b(?:cang (?:tiet kiem nuoc|it ton nuoc) cang tot|"
+                              r"nuoc cang (?:it|thap) cang tot|"
+                              r"(?:tiet kiem nuoc|it ton nuoc) nhat(?: co the)?)\b")
+    add("pin lâu", r"\b(?:pin cang (?:lau|trau) cang tot|"
+                   r"cang (?:lau pin|trau pin) cang tot|pin (?:lau|trau) nhat(?: co the)?)\b")
+    add("phản hồi nhanh", r"\b(?:(?:phan hoi|dap ung) cang nhanh cang tot|"
+                              r"(?:phan hoi|dap ung) nhanh nhat(?: co the)?)\b")
+    return list(dict.fromkeys(preferences))
 
 
 def declined_clarification(value: str) -> bool:

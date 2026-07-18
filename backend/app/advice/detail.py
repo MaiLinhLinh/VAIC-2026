@@ -4,6 +4,8 @@ from app.llm.client import LLMClient
 from app.advice.provenance import format_vnd, facts_for_llm, _ALWAYS_MISSING
 from app.advice.verify import verify_advice, is_grounded
 from app.nlu.preprocess import strip_accents
+from app.nlu.preprocess import parse_budget_vnd, wants_call
+from app.catalog.capabilities import call_status, product_supports_call
 
 # Cột raw KHÔNG phải "thông số" để hiển thị (id, giá & quà đã tách riêng)
 _SKIP_RAW = {"model_code", "sku", "productidweb", "category_code", "brand_id", "brand",
@@ -52,7 +54,15 @@ def resolve_product(message: str, products: list[Product]) -> Product | None:
         if len(b) >= 2 and b in flat:
             return p
 
-    # 3) theo superlative giá
+    # 3) theo mức giá được nhắc rõ (ví dụ "cái 150k có nghe gọi không")
+    low, high = parse_budget_vnd(message)
+    mentioned_price = high if high is not None else low
+    if mentioned_price is not None:
+        matches = [p for p in products if p.price.available and p.price.value == mentioned_price]
+        if len(matches) == 1:
+            return matches[0]
+
+    # 4) theo superlative giá
     priced = [p for p in products if p.price.available]
     if priced and ("re nhat" in flat or "gia thap nhat" in flat or "gia tot nhat" in flat):
         return min(priced, key=lambda p: p.price.value)
@@ -109,6 +119,18 @@ def _safe_summary(product: Product, card: FactCard) -> str:
 def answer_about_product(product: Product, question: str, llm: LLMClient) -> AdviceResult:
     """Trả lời sâu về 1 sản phẩm, grounded trong fact-sheet của nó; fail-closed nếu LLM bịa số."""
     card = build_full_fact_card(product)
+    if wants_call(question):
+        status = call_status(product)
+        if status is None or strip_accents(status.lower()) == "dang cap nhat":
+            message = (f"Dạ, catalog chưa có dữ liệu xác nhận {product.display_name} "
+                       "có nghe gọi được hay không ạ.")
+        elif product_supports_call(product):
+            message = (f"Dạ có ạ. Catalog ghi khả năng gọi của {product.display_name}: "
+                       f"{status}.")
+        else:
+            message = (f"Dạ không ạ. Catalog ghi khả năng gọi của {product.display_name}: "
+                       f"{status}. Em không xem mẫu này là đáp ứng nhu cầu nghe gọi.")
+        return AdviceResult(message=message, cards=[card], assumptions=[], warnings=[])
     facts = facts_for_llm([card])
     user = (f"Khách hỏi về \"{product.display_name}\": \"{question}\"\n\n"
             f"FACTS:\n{facts}\n\nTrả lời khách theo đúng quy tắc.")

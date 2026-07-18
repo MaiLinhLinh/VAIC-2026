@@ -23,6 +23,7 @@ from app.advice.provenance import build_fact_card, format_vnd
 from app.advice.compare import build_comparison
 from app.advice.budget import budget_alternatives, describe_tradeoff, minimum_budget_options
 from app.advice.detail import resolve_product, is_detail_question, answer_about_product
+from app.catalog.capabilities import CALL_CONSTRAINT, call_status, requires_call
 
 _BUDGET_INTENTS = (
     ("minimum", re.compile(
@@ -142,6 +143,8 @@ class Orchestrator:
                 state.profile.assumptions.append(a)
         notify("Em đang tìm máy phù hợp trong catalog…")
         reco = self.engine.recommend(state.profile)
+        if not reco.top3 and requires_call(state.profile):
+            return self._capability_fallback_turn(state)
         notify("Em đang soạn lời tư vấn…")
         if on_delta is not None:
             advice, streamed = stream_advice(reco, state.profile, self.llm, on_delta)
@@ -164,6 +167,63 @@ class Orchestrator:
             if streamed:
                 on_delta(suffix)  # keep live-emitted text identical to final reply
         return state, TurnResult(reply=reply, stage="recommended", advice=advice, need=state.profile)
+
+    def _capability_fallback_turn(self, state: ChatState):
+        """Route to truthful nearby choices when a mandatory capability has no exact match."""
+        exact_outside_budget = minimum_budget_options(state.profile, self.store)
+        if exact_outside_budget:
+            lines = [
+                "Dạ, trong mức ngân sách đã nêu em chưa tìm được đồng hồ có dữ liệu xác nhận nghe gọi.",
+                "Các mẫu gần nhất có xác nhận chức năng này là:",
+            ]
+            for sp in exact_outside_budget:
+                product = sp.product
+                price = format_vnd(int(product.price.value))
+                extra = ""
+                if state.profile.budget_max is not None and product.price.value > state.profile.budget_max:
+                    extra = f", cao hơn ngân sách {format_vnd(int(product.price.value - state.profile.budget_max))}"
+                lines.append(
+                    f"- {product.display_name}: {price}{extra}; khả năng gọi: {call_status(product)}."
+                )
+            options = exact_outside_budget
+        else:
+            related_profile = state.profile.model_copy(deep=True)
+            related_profile.constraints.pop(CALL_CONSTRAINT, None)
+            related = RetrievalEngine(self.store).recommend(related_profile).top3
+            if not related:
+                related = minimum_budget_options(related_profile, self.store)
+            lines = [
+                "Dạ, catalog hiện chưa có đồng hồ nào được xác nhận đáp ứng chức năng nghe gọi.",
+                "Nếu anh/chị chấp nhận bỏ yêu cầu này, em có thể điều hướng sang các mẫu liên quan sau:",
+            ]
+            for sp in related:
+                product = sp.product
+                price = format_vnd(int(product.price.value)) if product.price.available else "chưa có dữ liệu giá"
+                status = call_status(product) or "chưa có dữ liệu"
+                lines.append(
+                    f"- {product.display_name}: {price}; khả năng gọi: {status}."
+                )
+            if related:
+                lines.append("Các mẫu này chỉ để tham khảo và không được coi là đáp ứng yêu cầu nghe gọi ạ.")
+            else:
+                lines.append("Hiện catalog cũng chưa có sản phẩm liên quan có dữ liệu giá để tham khảo ạ.")
+            options = related
+
+        cards = [build_fact_card(sp, state.profile) for sp in options]
+        advice = AdviceResult(
+            message="\n".join(lines), cards=cards, assumptions=[], warnings=[],
+            comparison=build_comparison(options, state.profile),
+        )
+        state.stage = "recommended"
+        state.last_products = [sp.product for sp in options]
+        state.focused_sku = None
+        state.last_top_price = (
+            int(options[0].product.price.value)
+            if options and options[0].product.price.available else None
+        )
+        return state, TurnResult(
+            reply=advice.message, stage="recommended", advice=advice, need=state.profile
+        )
 
     def _meta_turn(self, state: ChatState, meta: str, pending_slot: str | None,
                    notify: Callable[[str], None],

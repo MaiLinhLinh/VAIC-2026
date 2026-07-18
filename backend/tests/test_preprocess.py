@@ -4,12 +4,15 @@ from app.nlu.preprocess import (
     declined_clarification,
     detect_category,
     expand_shorthand,
+    extract_optimization_preferences,
     extract_explicit_demographics,
     parse_budget_vnd,
     parse_people_count,
     parse_screen_size_inches,
     prefers_large_screen,
+    prefers_low_price,
     strip_accents,
+    wants_call,
 )
 
 
@@ -85,6 +88,47 @@ def test_parse_screen_size_inches():
 @pytest.mark.parametrize("message", ["càng to càng tốt", "càng lớn càng tốt", "màn hình lớn nhất"])
 def test_detects_large_screen_preference(message):
     assert prefers_large_screen(message) is True
+
+
+@pytest.mark.parametrize("message", [
+    "càng rẻ càng tốt",
+    "giá càng thấp càng tốt",
+    "ưu tiên giá mềm",
+    "rẻ nhất có thể",
+])
+def test_detects_qualitative_low_price_preference(message):
+    assert prefers_low_price(message) is True
+
+
+@pytest.mark.parametrize(
+    ("message", "category", "expected"),
+    [
+        ("màn càng rộng càng tốt", "man_hinh", ["màn hình lớn"]),
+        ("dung tích càng lớn càng tốt", "tu_lanh", ["dung tích lớn"]),
+        ("càng tiết kiệm điện càng tốt", "tu_lanh", ["tiết kiệm điện"]),
+        ("càng ít ồn càng tốt", "may_rua_chen", ["ít ồn"]),
+        ("pin càng lâu càng tốt", "dong_ho", ["pin lâu"]),
+        ("đáp ứng càng nhanh càng tốt", "man_hinh", ["phản hồi nhanh"]),
+    ],
+)
+def test_normalizes_supported_optimization_phrases(message, category, expected):
+    assert extract_optimization_preferences(message, category) == expected
+
+
+@pytest.mark.parametrize("message", [
+    "nghe gọi được",
+    "có thể gọi điện",
+    "có gọi được không",
+    "bé gọi cho bố mẹ",
+    "thực hiện cuộc gọi",
+    "có nghe gọi được không",
+])
+def test_detects_explicit_call_requirement(message):
+    assert wants_call(message) is True
+
+
+def test_does_not_turn_explicit_call_rejection_into_requirement():
+    assert wants_call("không cần nghe gọi") is False
 
 
 def test_extract_explicit_demographics():

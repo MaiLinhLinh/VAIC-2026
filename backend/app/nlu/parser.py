@@ -9,13 +9,16 @@ from app.nlu.preprocess import (
     declined_clarification,
     detect_category,
     expand_shorthand,
+    extract_optimization_preferences,
     extract_explicit_demographics,
     parse_budget_vnd,
     parse_monitor_purpose,
     parse_people_count,
     parse_screen_size_inches,
     prefers_large_screen,
+    prefers_low_price,
     strip_accents,
+    wants_call,
 )
 from app.schemas import NeedProfile
 
@@ -30,7 +33,8 @@ NEED_SYSTEM_PROMPT = (
     "thông tin thiếu phải để trống, tuyệt đối không suy đoán từ tên hay cách xưng hô. "
     f"category chỉ nhận một trong: {_CATEGORY_OPTIONS} (hoặc null nếu không rõ). "
     "budget_min/budget_max là số nguyên VND. constraints dùng khóa chuẩn: 'số người', "
-    "'khối lượng', 'dung tích', 'người dùng', 'mục đích', 'kích thước', 'kiểu dáng'. "
+    "'khối lượng', 'dung tích', 'người dùng', 'mục đích', 'kích thước', 'kiểu dáng', "
+    "'thực hiện cuộc gọi'. "
     "prefs là các ưu tiên ngắn gọn tiếng Việt. Câu trả lời ngắn như 'gaming', '24 inch', "
     "'cho bé' vẫn phải được trích xuất; câu sửa 'không phải..., mà...' chỉ lấy giá trị mới. "
     "demographics chỉ dùng khóa 'độ tuổi', 'đối tượng', 'giới tính', 'nghề nghiệp' và phải "
@@ -142,11 +146,20 @@ def parse_need(message: str, llm: LLMClient, prior: NeedProfile | None = None) -
         profile.constraints["số người"] = list(people)
 
     active_category = profile.category or (prior.category if prior else None)
+    if active_category == "dong_ho" and wants_call(message):
+        profile.constraints["thực hiện cuộc gọi"] = True
+
     purpose = parse_monitor_purpose(message)
     if purpose and active_category == "man_hinh":
         _replace_preference(profile, purpose, lambda pref: parse_monitor_purpose(pref) is not None)
-    if prefers_large_screen(message) and active_category in {"man_hinh", "dong_ho"}:
-        _replace_preference(profile, "màn hình lớn", prefers_large_screen)
+    optimization_prefs = extract_optimization_preferences(message, active_category)
+    for preference in optimization_prefs:
+        if preference == "màn hình lớn":
+            _replace_preference(profile, preference, prefers_large_screen)
+        elif preference == "giá thấp":
+            _replace_preference(profile, preference, prefers_low_price)
+        else:
+            _replace_preference(profile, preference, lambda pref, p=preference: pref == p)
 
     size = parse_screen_size_inches(message)
     if size is not None and active_category in {"man_hinh", "dong_ho"}:

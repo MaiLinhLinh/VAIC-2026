@@ -1,7 +1,6 @@
 from __future__ import annotations
 from app.schemas import Product, NeedProfile
-
-_PEOPLE_FIELD = "Số người sử dụng"
+from app.catalog.capabilities import iter_matching_specs, supports_capability
 
 
 def count_no_price(products: list[Product]) -> int:
@@ -20,34 +19,45 @@ def _passes_budget(p: Product, profile: NeedProfile) -> bool:
 
 
 def _numeric_spec_value(p: Product, key: str) -> float | None:
-    lowered = key.lower()
-    for spec_key in p.specs:
-        spec_lower = spec_key.lower()
-        if lowered == spec_lower or lowered in spec_lower or spec_lower in lowered:
-            num = p.number(spec_key)
-            if num is not None:
-                return num
+    for _, sv in iter_matching_specs(p, key):
+        if sv.available and isinstance(sv.value, (int, float)):
+            return sv.value
     return None
+
+
+def _passes_range(p: Product, key: str, bounds: list) -> bool:
+    lo, hi = bounds
+    for _, sv in iter_matching_specs(p, key):
+        if not sv.available:
+            continue
+        v = sv.value
+        if isinstance(v, list) and len(v) == 2:
+            # spec là một khoảng (vd "Số người sử dụng"): yêu cầu giao nhau với khoảng cần
+            s_lo, s_hi = v
+            if hi is not None and s_lo > hi:
+                return False
+            if lo is not None and s_hi < lo:
+                return False
+            return True
+        if isinstance(v, (int, float)):
+            if lo is not None and v < lo:
+                return False
+            if hi is not None and v > hi:
+                return False
+            return True
+    return True  # thiếu dữ liệu: không loại ở bước lọc cứng
 
 
 def _passes_constraints(p: Product, profile: NeedProfile) -> bool:
     for key, val in profile.constraints.items():
         if key.startswith("_"):
             continue
-        if key == "số người" and isinstance(val, list) and len(val) == 2:
-            sv = p.specs.get(_PEOPLE_FIELD)
-            if sv and sv.available and isinstance(sv.value, list):
-                lo, hi = sv.value
-                if hi < val[0] or lo > val[1]:   # không giao nhau
-                    return False
+        if val is True:
+            if not supports_capability(p, key):
+                return False
         elif isinstance(val, list) and len(val) == 2:
-            num = _numeric_spec_value(p, key)
-            if num is not None:
-                lo, hi = val
-                if lo is not None and num < lo:
-                    return False
-                if hi is not None and num > hi:
-                    return False
+            if not _passes_range(p, key, val):
+                return False
         elif isinstance(val, (int, float)):
             num = _numeric_spec_value(p, key)
             if num is not None and not (val * 0.75 <= num <= val * 1.25):

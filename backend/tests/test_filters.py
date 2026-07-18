@@ -45,3 +45,31 @@ def test_numeric_range_constraint_enforces_minimum_bound():
     prof = NeedProfile(category="man_hinh", constraints={"kích thước": [15, None]})
     out = apply_hard_filters(ps, prof)
     assert len(out) == 1 and out[0].display_name == "Màn hình B"
+
+
+def test_call_requirement_fails_closed_on_negative_or_missing_catalog_data():
+    def watch(sku, status):
+        specs = ({"Thực hiện cuộc gọi": SourcedValue.of(status, "thông số nhà sản xuất")}
+                 if status is not None else {})
+        return Product(
+            category="Đồng hồ thông minh", category_code="dong_ho", model_code=sku, sku=sku,
+            brand=sku, display_name=f"Đồng hồ {sku}", price=SourcedValue.of(900_000, "catalog"),
+            original_price=SourcedValue.of(900_000, "catalog"), sale_price=SourcedValue.missing(),
+            specs=specs, spec_doc="", promo_text=None, raw={},
+        )
+
+    products = [
+        watch("YES", "Nghe gọi ngay trên đồng hồ"),
+        watch("YES_STANDALONE", "Nghe gọi độc lập"),
+        watch("NO", "Không"),
+        watch("NO_2", "Không có"),
+        watch("MISSING", None),
+        watch("UPDATING", "Đang cập nhật"),
+        watch("RECEIVE", "Nhận cuộc gọi bằng đồng hồ"),
+    ]
+    profile = NeedProfile(
+        category="dong_ho", constraints={"thực hiện cuộc gọi": True}
+    )
+
+    kept = [p.sku for p in apply_hard_filters(products, profile)]
+    assert kept == ["YES", "YES_STANDALONE", "RECEIVE"]

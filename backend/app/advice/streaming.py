@@ -6,6 +6,7 @@ from app.advice.provenance import build_fact_card
 from app.advice.generate import advice_prompt, generate_advice
 from app.advice.verify import allowed_numbers, line_is_grounded, verify_advice
 from app.advice.compare import build_comparison
+from app.catalog.capabilities import requires_call
 
 
 def stream_advice(reco: Recommendation, profile: NeedProfile, llm: LLMClient,
@@ -19,8 +20,8 @@ def stream_advice(reco: Recommendation, profile: NeedProfile, llm: LLMClient,
     live, i.e. every line passed verification. Falls back to the blocking path
     (nothing emitted, streamed=False) if the LLM stream fails.
     """
-    if not reco.top3:
-        # Deterministic "no match" message, no LLM call — let the endpoint deliver it.
+    if not reco.top3 or requires_call(profile):
+        # Deterministic empty/capability messages do not need an LLM stream.
         return generate_advice(reco, profile, llm), False
 
     cards = [build_fact_card(sp, profile) for sp in reco.top3]

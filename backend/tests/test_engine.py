@@ -30,3 +30,17 @@ def test_query_from_profile():
     prof = NeedProfile(category="tu_lanh", prefs=["tiết kiệm điện", "ít ồn"], demographics={"đối tượng": "gia đình"})
     q = query_from_profile(prof)
     assert "tiết kiệm điện" in q and "gia đình" in q
+
+
+def test_low_price_preference_ranks_cheapest_product_first_without_numeric_budget():
+    store = ProductStore([
+        mk("tu_lanh", "A", 12_000_000, 300),
+        mk("tu_lanh", "B", 8_000_000, 400),
+        mk("tu_lanh", "C", 10_000_000, 350),
+    ])
+    reco = RetrievalEngine(store).recommend(
+        NeedProfile(category="tu_lanh", prefs=["giá thấp"])
+    )
+
+    assert reco.top3[0].product.brand == "B"
+    assert "giá thấp" in reco.top3[0].matched

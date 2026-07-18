@@ -80,6 +80,29 @@ def test_budget_follow_up_accepts_rough_range_instead_of_demanding_exact_price()
     assert "khoảng" in q.text.lower() and "không cần chính xác" in q.text.lower()
 
 
+def test_qualitative_low_price_preference_answers_budget_question():
+    prof = NeedProfile(
+        category="tu_lanh",
+        constraints={"số người": [5, 5]},
+        prefs=["giá thấp"],
+    )
+
+    assert next_question(prof, asked=["số người", "ngân sách"]) is None
+    assert should_recommend(prof, asked=["số người", "ngân sách"]) is True
+
+
+def test_mandatory_call_requirement_avoids_redundant_preference_question():
+    prof = NeedProfile(
+        category="dong_ho",
+        budget_max=1_000_000,
+        demographics={"đối tượng": "trẻ em"},
+        constraints={"thực hiện cuộc gọi": True},
+    )
+
+    assert next_question(prof, asked=["ngân sách"]) is None
+    assert should_recommend(prof, asked=["ngân sách"]) is True
+
+
 def test_watch_preference_question_is_persona_aware():
     prof = NeedProfile(
         category="dong_ho",

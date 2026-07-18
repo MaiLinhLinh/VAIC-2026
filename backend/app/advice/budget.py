@@ -39,8 +39,20 @@ def minimum_budget_options(profile: NeedProfile, store: ProductStore) -> list[Sc
         if with_pref_data:
             scored = with_pref_data
 
-    priced = [sp for sp in scored if sp.product.price.available]
-    return sorted(priced, key=lambda sp: (int(sp.product.price.value), -sp.score))[:3]
+    priced = sorted(
+        (sp for sp in scored if sp.product.price.available),
+        key=lambda sp: (int(sp.product.price.value), -sp.score),
+    )
+    distinct: list[ScoredProduct] = []
+    seen_names: set[str] = set()
+    for sp in priced:
+        if sp.product.display_name in seen_names:
+            continue
+        seen_names.add(sp.product.display_name)
+        distinct.append(sp)
+        if len(distinct) == 3:
+            break
+    return distinct
 
 
 def describe_tradeoff(cheaper: ScoredProduct, current_price: int) -> str:

@@ -25,7 +25,7 @@ def build_fact_card(sp: ScoredProduct, profile: NeedProfile) -> FactCard:
         missing.append("giá")
 
     for field, sv in p.specs.items():
-        if not _relevant(field, sp):
+        if not _relevant(field, sp, profile):
             continue
         if sv.available and sv.value is not None:
             unit = f" {sv.unit}" if sv.unit else ""
@@ -39,7 +39,7 @@ def build_fact_card(sp: ScoredProduct, profile: NeedProfile) -> FactCard:
     return FactCard(title=f"Vì sao em đề xuất {p.display_name}?", lines=lines, missing=missing)
 
 
-def _relevant(field: str, sp: ScoredProduct) -> bool:
+def _relevant(field: str, sp: ScoredProduct, profile: NeedProfile) -> bool:
     # spec được coi là "quyết định" nếu nó là field đứng sau một pref đã khớp
     from app.catalog.category_config import config_for
     cfg = config_for(sp.product.category_code)
@@ -47,7 +47,13 @@ def _relevant(field: str, sp: ScoredProduct) -> bool:
     for pref in sp.matched:
         for sig in cfg.pref_lexicon.get(pref, []):
             fields.add(sig.field)
-    return field in fields
+    from app.nlu.preprocess import canonical_constraint_key
+    constrained = {
+        canonical_constraint_key(key)
+        for key, value in profile.constraints.items()
+        if not key.startswith("_") and value is not None
+    }
+    return field in fields or canonical_constraint_key(field) in constrained
 
 
 def facts_for_llm(cards: list[FactCard]) -> str:
