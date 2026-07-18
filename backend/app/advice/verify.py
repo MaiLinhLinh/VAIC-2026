@@ -30,6 +30,13 @@ def allowed_numbers(cards: list[FactCard]) -> set[str]:
 _SAFE = {str(i) for i in range(0, 100)}
 
 
+def line_is_grounded(line: str, allowed: set[str]) -> bool:
+    # Per-line check used by streaming: a line may be emitted only if every number
+    # in it is sourced (or trivially safe). Numbers never span newlines, so
+    # line-level pass on all lines ⇔ full-message pass.
+    return all(n in allowed or n in _SAFE for n in extract_numbers(line))
+
+
 def verify_advice(result: AdviceResult) -> AdviceResult:
     allowed = allowed_numbers(result.cards)
     warnings = list(result.warnings)

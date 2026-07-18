@@ -41,3 +41,32 @@ def test_chat_recommends():
     assert body["stage"] == "recommended"
     assert body["recommendation"]["cards"]
     app.dependency_overrides.clear()
+
+
+def _parse_sse(text):
+    import json
+    events = []
+    for block in text.split("\n\n"):
+        for line in block.split("\n"):
+            if line.startswith("data: "):
+                events.append(json.loads(line[len("data: "):]))
+    return events
+
+
+def test_chat_stream_events():
+    app.dependency_overrides[get_orchestrator] = _fake_orch
+    client = TestClient(app)
+    r = client.post("/api/chat/stream",
+                    json={"session_id": "s2", "message": "nha 4 nguoi mua tu lanh 20tr tiet kiem dien"})
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/event-stream")
+    events = _parse_sse(r.text)
+    types = [e["type"] for e in events]
+    assert "status" in types                      # progress surfaced before the reply
+    assert types[-1] == "done"                    # stream always ends with full payload
+    done = events[-1]
+    deltas = "".join(e["text"] for e in events if e["type"] == "delta")
+    assert deltas == done["reply"]                # deltas reassemble the verified reply
+    assert done["stage"] == "recommended"
+    assert done["recommendation"]["cards"]
+    app.dependency_overrides.clear()
