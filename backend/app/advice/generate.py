@@ -2,6 +2,7 @@ from __future__ import annotations
 from app.schemas import Recommendation, NeedProfile, AdviceResult
 from app.llm.client import LLMClient
 from app.advice.provenance import build_fact_card, facts_for_llm
+from app.advice.compare import build_comparison
 
 ADVICE_SYSTEM_PROMPT = (
     "Bạn là nhân viên tư vấn điện máy thân thiện, nói tiếng Việt bình dân (không dùng thuật ngữ "
@@ -30,4 +31,6 @@ def generate_advice(reco: Recommendation, profile: NeedProfile, llm: LLMClient) 
     user = (f"Nhu cầu khách: ưu tiên {prefs_txt}.\n\nFACTS:\n{facts}{excluded_txt}\n\n"
             "Viết lời tư vấn theo đúng quy tắc.")
     message = llm.complete_text(ADVICE_SYSTEM_PROMPT, user)
-    return AdviceResult(message=message, cards=cards, assumptions=reco.assumptions, warnings=[])
+    comparison = build_comparison(reco.top3, profile)
+    return AdviceResult(message=message, cards=cards, assumptions=reco.assumptions,
+                        warnings=[], comparison=comparison)

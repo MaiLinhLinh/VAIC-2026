@@ -108,8 +108,28 @@ class FactCard(BaseModel):
     missing: list[str] = Field(default_factory=list)
 
 
+class ComparisonCell(BaseModel):
+    value: str                      # "12.400.000đ", "300 kWh/năm", hoặc "chưa có dữ liệu"
+    available: bool = True
+    is_best: bool = False           # ứng viên tốt nhất theo tiêu chí của hàng này
+
+
+class ComparisonRow(BaseModel):
+    label: str                      # "Giá", "Điện năng tiêu thụ", "Thương hiệu"
+    unit: str | None = None
+    source: str                     # "catalog" / "thông số nhà sản xuất"
+    cells: list[ComparisonCell] = Field(default_factory=list)   # 1 ô / sản phẩm, cùng thứ tự với products
+    better: str | None = None       # gợi ý đọc: "giá thấp hơn tốt hơn", ...
+
+
+class ComparisonTable(BaseModel):
+    products: list[str] = Field(default_factory=list)          # tên cột (display_name các ứng viên)
+    rows: list[ComparisonRow] = Field(default_factory=list)
+
+
 class AdviceResult(BaseModel):
     message: str
     cards: list[FactCard] = Field(default_factory=list)
     assumptions: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    comparison: ComparisonTable | None = None

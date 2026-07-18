@@ -1,4 +1,5 @@
 import SourcePanel from './SourcePanel'
+import ComparisonTable from './ComparisonTable'
 
 export default function Message({ msg }) {
   const { role, text, recommendation } = msg
@@ -8,6 +9,7 @@ export default function Message({ msg }) {
       {recommendation?.warnings?.length > 0 && (
         <div className="warn">⚠ Có số liệu chưa truy được nguồn — đã ẩn để tránh sai lệch.</div>
       )}
+      {recommendation?.comparison && <ComparisonTable table={recommendation.comparison} />}
       {recommendation?.cards?.map((c, i) => (
         <div className="card" key={i}>
           <div className="card-title">{c.title.replace('Vì sao em đề xuất ', '').replace('?', '')}</div>

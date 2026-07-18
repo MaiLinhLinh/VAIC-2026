@@ -10,6 +10,7 @@ from app.retrieval.engine import RetrievalEngine
 from app.advice.generate import generate_advice
 from app.advice.verify import verify_advice, is_grounded
 from app.advice.provenance import build_fact_card
+from app.advice.compare import build_comparison
 from app.advice.budget import budget_alternatives, describe_tradeoff
 
 _CHEAPER_KW = ["re hon", "gia re hon", "gia thap hon", "bot tien", "giam ngan sach",
@@ -108,7 +109,8 @@ class Orchestrator:
         for a in alts:
             lines.append("- " + describe_tradeoff(a, state.last_top_price))
         # Message is built deterministically from catalog prices (format_vnd) -> grounded by construction.
-        advice = AdviceResult(message="\n".join(lines), cards=cards, assumptions=[], warnings=[])
+        advice = AdviceResult(message="\n".join(lines), cards=cards, assumptions=[], warnings=[],
+                              comparison=build_comparison(alts, state.profile))
         if alts[0].product.price.available:
             state.last_top_price = alts[0].product.price.value
         return state, TurnResult(reply=advice.message, stage="recommended", advice=advice, need=state.profile)

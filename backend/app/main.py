@@ -45,6 +45,8 @@ def chat(body: ChatIn, orch: Orchestrator = Depends(get_orchestrator)):
             "cards": [c.model_dump() for c in result.advice.cards],
             "assumptions": result.advice.assumptions,
             "warnings": result.advice.warnings,
+            "comparison": (result.advice.comparison.model_dump()
+                           if result.advice.comparison else None),
         }
     return {"reply": result.reply, "stage": result.stage,
             "question": result.question, "need": result.need.model_dump(),
