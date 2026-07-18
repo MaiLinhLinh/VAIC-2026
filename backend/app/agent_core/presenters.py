@@ -63,15 +63,17 @@ def build_reco_card(row: Dict[str, Any], priority_features: List[str]) -> FactCa
 
     specs = load_specs(row)
     prefs_low = [p.lower() for p in (priority_features or [])]
-    shown = 0
-    for k, v in specs.items():
-        relevant = any(p in k.lower() or p in v.lower() for p in prefs_low)
-        if relevant and shown < 4:
-            lines.append(FactLine(label=k, value=v, source="thông số nhà sản xuất"))
-            shown += 1
-    if shown == 0:  # không match ưu tiên -> lấy tối đa 3 spec đầu để có dữ kiện gắn nguồn
-        for k, v in list(specs.items())[:3]:
-            lines.append(FactLine(label=k, value=v, source="thông số nhà sản xuất"))
+    # Ưu tiên hiển thị: (1) spec khớp ưu tiên khách, (2) spec CÓ SỐ (để LLM có con số hợp lệ
+    # để trích dẫn, giảm fail-closed), (3) spec còn lại. Tối đa 5 dòng spec.
+    ordered = sorted(
+        specs.items(),
+        key=lambda kv: (
+            0 if any(p in kv[0].lower() or p in kv[1].lower() for p in prefs_low) else 1,
+            0 if parse_leading_number(kv[1]) is not None else 1,
+        ),
+    )
+    for k, v in ordered[:5]:
+        lines.append(FactLine(label=k, value=v, source="thông số nhà sản xuất"))
 
     if row.get("gift_promo"):
         lines.append(FactLine(label="Khuyến mãi/quà kèm", value=str(row["gift_promo"]),

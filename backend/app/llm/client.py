@@ -14,7 +14,7 @@ class LLMClient(Protocol):
 
 class DeepSeekClient:
     def __init__(self, base_url: str, api_key: str, model: str,
-                 timeout: float = 60.0, max_tokens: int = 2048):
+                 timeout: float = 60.0, max_tokens: int = 4096):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
