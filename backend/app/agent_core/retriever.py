@@ -2,12 +2,19 @@ import sqlite3
 import re
 import math
 from typing import List, Dict, Any, Optional
+from app.config import get_settings
 
-def get_catalog_metadata(db_path: str = "products.db") -> Dict[str, Any]:
+
+def _resolve_db(db_path: Optional[str]) -> str:
+    return db_path or get_settings().agent_db_path
+
+
+def get_catalog_metadata(db_path: Optional[str] = None) -> Dict[str, Any]:
     """
-    Dynamically fetches distinct categories, sample brands, and price ranges 
+    Dynamically fetches distinct categories, sample brands, and price ranges
     directly from the SQLite database without hardcoding.
     """
+    db_path = _resolve_db(db_path)
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
@@ -25,10 +32,11 @@ def get_catalog_metadata(db_path: str = "products.db") -> Dict[str, Any]:
         "brands": brands
     }
 
-def get_schema_summary(db_path: str = "products.db") -> str:
+def get_schema_summary(db_path: Optional[str] = None) -> str:
     """
     Returns a clean summary of the database schema for LangChain prompt injection.
     """
+    db_path = _resolve_db(db_path)
     meta = get_catalog_metadata(db_path)
     cats_str = ", ".join(f"'{c}'" for c in meta["categories"])
     return f"Danh mục sản phẩm hiện có trong CSDL ({len(meta['categories'])} danh mục): [{cats_str}]"
@@ -81,14 +89,15 @@ def search_products(
     max_price: Optional[float] = None, 
     brand: Optional[str] = None,
     priority_features: Optional[List[str]] = None,
-    top_k: int = 5, 
-    db_path: str = "products.db",
+    top_k: int = 5,
+    db_path: Optional[str] = None,
     is_meta_inquiry: bool = False
 ) -> Dict[str, Any]:
     """
     Hybrid retriever with exact status recognition ('exact_match', 'budget_fallback', 'no_products_found', 'meta_inquiry').
     If budget is too low and yields 0 results, dynamically retrieves the cheapest alternatives slightly above budget.
     """
+    db_path = _resolve_db(db_path)
     query_lower = query.lower()
     if is_meta_inquiry or ((not category and not max_price and not brand and not priority_features) and any(w in query_lower for w in ["bao nhiêu", "loại", "danh mục", "dòng", "sản phẩm nào", "hiện có", "những gì"])):
         meta = get_catalog_metadata(db_path)

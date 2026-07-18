@@ -1,5 +1,11 @@
+import os
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+# products.db chuẩn hoá về đúng 1 vị trí trong package agent_core, resolve tuyệt đối
+# theo vị trí file (không phụ thuộc cwd khi chạy uvicorn / pytest).
+_DEFAULT_AGENT_DB = os.path.join(_APP_DIR, "agent_core", "products.db")
 
 
 class Settings(BaseSettings):
@@ -11,6 +17,12 @@ class Settings(BaseSettings):
     dataset_path: str = "../Dataset.xlsx"
     catalog_path: str = "./data/catalog.normalized.json"
     enable_embeddings: bool = False
+    # Luồng phục vụ: "agent_core" (LangGraph + SQLite) hoặc "orchestrator" (bản cũ).
+    pipeline: str = "agent_core"
+    # DB SQLite của agent_core; đường dẫn tuyệt đối mặc định, override bằng AGENT_DB_PATH.
+    agent_db_path: str = _DEFAULT_AGENT_DB
+    # Nguồn Excel để rebuild DB (chỉ dùng khi chạy data_ingestion).
+    excel_source_path: str = "../Spec_cate_gia.cleaned.xlsx"
 
 
 @lru_cache

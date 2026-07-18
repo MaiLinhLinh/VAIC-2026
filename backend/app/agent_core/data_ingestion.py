@@ -9,8 +9,10 @@ import openpyxl
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
-EXCEL_PATH = "d:/Code/Hackathon_V2/Spec_cate_gia.xlsx"
-DB_PATH = "d:/Code/Hackathon_V2/products.db"
+from app.config import get_settings
+_S = get_settings()
+EXCEL_PATH = _S.excel_source_path
+DB_PATH = _S.agent_db_path
 
 SHEET_TO_TABLE_MAP = {
     "Tủ Lạnh": "tu_lanh",

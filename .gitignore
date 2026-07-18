@@ -8,3 +8,5 @@ backend/data/catalog.normalized.json
 dist/
 .pytest_cache/
 *.egg-info/
+products.db
+backend/app/agent_core/products.db
