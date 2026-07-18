@@ -46,7 +46,7 @@ def build_comparison(rows: List[Dict[str, Any]], priority_features: List[str]) -
             seen.add(key)
             unique_rows.append(r)
             
-    rows = unique_rows[:3]
+    rows = unique_rows[:4]
     if len(rows) < 2:
         return None
     products = [product_display_name(r) for r in rows]

@@ -12,8 +12,12 @@ from app.agent_core.advisor import build_cards, generate_advisor
 from app.agent_core.compare import build_comparison
 from app.agent_core.detail import (is_detail_question, wants_product_list,
                                     resolve_product_row, answer_detail)
-from app.agent_core.presenters import product_display_name
+from app.agent_core.slots import (spec_slot_columns, update_slots, reached_threshold,
+                                   count_filled, count_touched, slots_summary)
+from app.agent_core.presenters import product_display_name, build_detail_card
+from app.advice.provenance import facts_for_llm
 from app.advice.verify import verify_advice, is_grounded
+from app.nlu.preprocess import strip_accents
 from app.schemas import AdviceResult
 
 log = logging.getLogger("agent_core")
@@ -37,6 +41,12 @@ class AgentState(TypedDict, total=False):
     warnings: List[str]
     next_action: str
     clarify_count: int
+    last_category: Optional[str]
+    slots: List[Dict[str, Any]]      # slot đặc thù ngành đang thu thập (theo cột DB)
+    next_question: Optional[str]     # câu hỏi slot/chân dung do AI soạn cho lượt tới
+    slot_stage: Optional[str]        # None | "await_compare_confirm"
+    offered_touched: int             # mức 'touched' lúc gần nhất mời so sánh (chống mời lặp)
+    top_n: int                       # số sản phẩm khách muốn khoanh để so sánh
 
 
 def _cfg(config, key, default=None):
@@ -61,14 +71,38 @@ def intent_node(state: AgentState, config) -> AgentState:
     # Lưới dự phòng: keyword bắt được từ chối thì tin, kể cả khi LLM bỏ sót.
     if kw_declines(query):
         intent["declines_more_info"] = True
-    log.info("intent_node: query=%r -> category=%r budget_max=%s brand=%r feats=%s "
-             "assumptions=%s declines=%s needs_clarification=%s meta=%s",
-             query, intent.get("category"), intent.get("budget_max"), intent.get("brand"),
-             intent.get("priority_features"), intent.get("assumptions"),
-             intent.get("declines_more_info"), intent.get("needs_clarification"),
-             intent.get("is_meta_inquiry"))
-    history = history + [{"role": "user", "content": query}]
-    return {"intent": intent, "history": history}
+    new_cat = intent.get("category")
+    last_cat = state.get("last_category")
+    out: Dict[str, Any] = {"intent": intent,
+                           "history": history + [{"role": "user", "content": query}]}
+    # Đổi NGÀNH HÀNG = nhu cầu mới -> reset toàn bộ trạng thái thu thập slot cho ngành mới.
+    switched = bool(new_cat and last_cat and new_cat != last_cat)
+    slots = [] if switched else list(state.get("slots") or [])
+    if switched:
+        out.update({"slot_stage": None, "offered_touched": -1, "top_n": 3})
+    if new_cat:
+        out["last_category"] = new_cat
+
+    # Cập nhật slot ngành khi đã rõ ngành và lượt này KHÔNG phải xã giao/hỏi ngược/hỏi mặt hàng lạ.
+    # Chạy cả khi đang chờ xác nhận so sánh: khách có thể trả lời "top mấy?" bằng cách BỔ SUNG
+    # tiêu chí thay vì đồng ý -> vẫn cần bắt slot mới đó.
+    side = intent.get("is_chitchat") or intent.get("is_meta_inquiry") or intent.get("unsupported_product")
+    if new_cat and not side:
+        db_path = _cfg(config, "db_path")
+        cat_table = category_table_for(new_cat, db_path)
+        cols = spec_slot_columns(cat_table, db_path) if cat_table else []
+        res = update_slots(_cfg(config, "llm"), query, history, new_cat, cols, slots)
+        out["slots"] = res["slots"]
+        out["next_question"] = res["next_question"]
+    else:
+        out["slots"] = slots
+
+    log.info("intent_node: query=%r -> category=%r declines=%s meta=%s chitchat=%s | "
+             "slots filled=%d touched=%d (switched=%s)",
+             query, new_cat, intent.get("declines_more_info"), intent.get("is_meta_inquiry"),
+             intent.get("is_chitchat"), count_filled(out.get("slots") or []),
+             count_touched(out.get("slots") or []), switched)
+    return out
 
 
 def _is_detail_followup(state: AgentState) -> bool:
@@ -88,63 +122,119 @@ def _is_detail_followup(state: AgentState) -> bool:
     return False
 
 
-# Trần số lượt hỏi lại cho cả phiên: quá trần thì tư vấn luôn thay vì hỏi mãi.
-_MAX_CLARIFY = 3
+# Trả lời câu "muốn xem top mấy để so sánh?": (đồng ý, N) | (từ chối) | (chưa rõ = thêm tiêu chí).
+# Chỉ nhận "yes" khi RÕ RÀNG (có số hoặc từ đồng ý dứt khoát) — tránh nhầm câu bổ sung tiêu chí.
+_COMPARE_YES = ("dong y", "so sanh di", "xem di", "chot", "vang a", " co a", "okie", " ok ", "oke")
+_COMPARE_NO = ("khong", "chua", "thoi", "de sau", "chua can", "tu tu")
+
+
+def parse_compare_reply(query: str) -> tuple[str, int]:
+    flat = " " + strip_accents((query or "").lower()).strip() + " "
+    import re as _re
+    # Số kèm đơn vị tiền là NGÂN SÁCH, không phải "top N" -> bỏ qua khi tìm số top.
+    money = _re.search(r"\d+\s*(trieu|tr|cu|trd|k|nghin|ngan|dong|d)\b", flat)
+    m = _re.search(r"\b(\d+)\b", flat)
+    if m and not money and int(m.group(1)) <= 10:
+        return "yes", max(2, min(4, int(m.group(1))))
+    if any(k in flat for k in _COMPARE_NO):
+        return "no", 3
+    if any(k in flat for k in _COMPARE_YES):
+        return "yes", 3
+    return "unclear", 3   # khách nói thêm tiêu chí -> coi như bổ sung slot, mời lại
+
+
+# Luật cứng: lượt khách KẾT THÚC bằng câu hỏi -> trả lời câu hỏi, KHÔNG đưa sản phẩm/so sánh.
+# Đuôi câu hỏi tiếng Việt (đã bỏ dấu) dùng khi khách không gõ dấu "?".
+_QUESTION_TAILS = ("khong", "ko", "sao", "gi", "nao", "nhi", "the nao", "bao nhieu",
+                   "bao lau", "o dau", "la gi", "duoc chu", "phai khong")
+# Ngoại lệ: câu hỏi mà bản thân nó là lời XIN ĐỀ XUẤT -> đề xuất chính là câu trả lời.
+_RECO_REQUEST_KW = ("goi y", "tu van", "de xuat", "chon giup", "chon dum", "nen mua",
+                    "nen chon", "nen lay", "nao tot", "nao re", "nao ben", "nao phu hop",
+                    "nao dang mua", "mau nao", "loai nao", "co mau", "co loai", "recommend")
+
+
+def ends_with_question(query: str) -> bool:
+    raw = (query or "").strip().rstrip(".!…~ ")
+    if raw.endswith("?"):
+        return True
+    flat = strip_accents(raw.lower()).rstrip("?!. ")
+    return any(flat.endswith(t) for t in _QUESTION_TAILS)
+
+
+def asks_for_recommendation(query: str) -> bool:
+    flat = strip_accents((query or "").lower())
+    return any(k in flat for k in _RECO_REQUEST_KW)
 
 
 def router_edge(state: AgentState) -> str:
     intent = state.get("intent", {})
-    count = state.get("clarify_count", 0)
-    # Luật cứng: ngành hàng và NGÂN SÁCH là bắt buộc trước khi đề xuất —
-    # 3. Yêu cầu category, không bắt buộc ngân sách nữa
-    missing_required = not intent.get("category")
+    query = state.get("query", "")
+    slots = state.get("slots") or []
     declines = bool(intent.get("declines_more_info"))
+    wants_reco = asks_for_recommendation(query) or intent.get("wants_comparison")
     if _is_detail_followup(state):
         route = "detail"
     elif intent.get("is_chitchat"):
-        # Xã giao/ngoài chủ đề: đáp thân thiện rồi lái về mua sắm, không đụng catalog.
         route = "chitchat"
     elif intent.get("is_meta_inquiry"):
         route = "meta_inquiry"
     elif intent.get("unsupported_product"):
-        # Khách hỏi mặt hàng không kinh doanh -> nói thật + gợi ý nhóm liên quan có bán.
         route = "unsupported"
     elif not intent.get("category"):
-        # Luật thép: không bao giờ đề xuất khi chưa rõ ngành hàng (kể cả hết quota hỏi
-        # hay khách từ chối) — đề xuất ngẫu nhiên toàn kho tệ hơn một câu hỏi thêm.
+        # Luật thép: chưa rõ ngành hàng -> không bao giờ đề xuất, hỏi ngành trước.
         route = "clarify"
-    elif declines:
-        # Từ chối chỉ miễn câu hỏi ngân sách/nhu cầu; ngành đã rõ -> tư vấn 3 tầm giá.
+    elif state.get("slot_stage") == "await_compare_confirm":
+        # Đang chờ khách trả lời "muốn xem top mấy?".
+        verdict = parse_compare_reply(query)[0]
+        if verdict == "yes":
+            route = "retrieve"                # đồng ý (kèm số top N) -> đề xuất
+        elif verdict == "no":
+            route = "clarify"                 # chưa muốn so sánh -> hỏi thêm slot để thu hẹp
+        else:
+            route = "confirm_compare"         # bổ sung tiêu chí -> cập nhật rồi mời lại (giữ chờ)
+    elif reached_threshold(slots):
+        # Đủ ngưỡng slot -> BẮT BUỘC hỏi "top mấy?" trước khi so sánh (kể cả khi khách có vẻ
+        # xin đề xuất — bước xác nhận là chốt chặn). Mời lại chỉ khi có thông tin MỚI (chống lặp);
+        # đã mời ở mức này rồi (khách vừa từ chối) -> hỏi thêm slot; hết slot để hỏi -> đề xuất.
+        if count_touched(slots) > state.get("offered_touched", -1):
+            route = "confirm_compare"
+        elif state.get("next_question"):
+            route = "clarify"
+        else:
+            route = "retrieve"
+    elif declines or wants_reco:
+        # CHƯA đủ ngưỡng nhưng khách sốt ruột xin gợi ý/so sánh, hoặc từ chối bổ sung -> đề xuất ngay.
         route = "retrieve"
-    elif count >= _MAX_CLARIFY:
-        route = "retrieve"
-    elif missing_required or (intent.get("needs_clarification") and not has_enough_slots(intent)):
-        route = "clarify"
     else:
-        route = "retrieve"
-    log.info("router: -> %s (missing_required=%s, declines=%s, needs_clarification=%s, "
-             "has_enough_slots=%s, clarify_count=%d, last_products=%d, focused_sku=%r)",
-             route, missing_required, declines, intent.get("needs_clarification"),
-             has_enough_slots(intent), count, len(state.get("last_products") or []),
-             state.get("focused_sku"))
+        # Chưa đủ ngưỡng: còn câu hỏi thì hỏi tiếp; hết câu hỏi (không khai thác thêm được) -> đề xuất.
+        route = "clarify" if state.get("next_question") else "retrieve"
+    # Luật cứng cuối: khách kết thúc bằng CÂU HỎI -> trả lời câu hỏi trước (trừ khi là lời xin đề xuất),
+    # và trừ khi đang ở bước xác nhận so sánh (câu "top mấy?" của khách cũng là dạng câu hỏi).
+    if (route in ("retrieve", "clarify") and state.get("slot_stage") != "await_compare_confirm"
+            and ends_with_question(query) and not asks_for_recommendation(query)):
+        route = "question"
+    log.info("router: -> %s (declines=%s, slot_stage=%r, filled=%d, touched=%d, "
+             "offered=%d, next_q=%s, ends_q=%s)",
+             route, declines, state.get("slot_stage"), count_filled(slots), count_touched(slots),
+             state.get("offered_touched", -1), bool(state.get("next_question")),
+             ends_with_question(query))
     return route
 
 
 def clarify_node(state: AgentState, config) -> AgentState:
     intent = state.get("intent", {})
     cat = intent.get("category")
-    count = state.get("clarify_count", 0)
-    # Câu hỏi do AI soạn theo bối cảnh khách kể — dùng nguyên văn; luật chỉ vá khi thiếu.
-    qs = [q.strip() for q in (intent.get("clarification_questions") or []) if q.strip()][:2]
+    # Ưu tiên câu hỏi SLOT do AI soạn theo cột ngành (thu thập nhu cầu đặc thù);
+    # thiếu thì rơi về câu hỏi làm rõ chung của intent, cuối cùng là câu gợi mở mặc định.
+    nq = state.get("next_question")
+    qs = [nq] if nq else [q.strip() for q in (intent.get("clarification_questions") or []) if q.strip()][:2]
     if not cat and not qs:
         cats = get_catalog_metadata(_cfg(config, "db_path"))["categories"]
         qs = ["Bên em đang có: " + ", ".join(cats) + ". Anh/chị đang cần nhóm sản phẩm nào ạ?"]
-    # Luật "chốt sổ": đây là câu hỏi cuối của quota mà ngân sách vẫn trống -> phải phủ ngân sách.
-    _money = ("ngân sách", "giá", "bao nhiêu", "tiền", "triệu", "tầm")
-    if (cat and not intent.get("budget_max") and count >= _MAX_CLARIFY - 1
-            and not any(w in q.lower() for q in qs for w in _money)):
-        qs = (qs + ["Anh/chị dự tính ngân sách khoảng bao nhiêu ạ?"])[-2:]
-    # Chỉ chào ở lượt trợ lý mở lời đầu tiên của phiên; các lượt sau vào thẳng câu hỏi.
+    elif cat and not qs:
+        qs = [f"Anh/chị cần {cat} cho nhu cầu hay mục đích gì ạ?"]
+        if not intent.get("budget_max"):
+            qs.append("Ngân sách dự kiến của mình khoảng bao nhiêu ạ?")
     greeted = any(m.get("role") == "assistant" for m in state.get("history", []))
     transition = intent.get("transition_message")
     if transition:
@@ -157,9 +247,29 @@ def clarify_node(state: AgentState, config) -> AgentState:
         opener = "Chào bạn! Để tư vấn đúng nhu cầu, bạn chia sẻ thêm giúp em:"
     text = opener + "\n\n" + "\n".join(f"- {q}" for q in qs)
     history = state.get("history", []) + [{"role": "assistant", "content": text}]
-    return {"response": text, "question": qs[0] if qs else None, "stage": "collecting",
+    out: Dict[str, Any] = {"response": text, "question": qs[0] if qs else None, "stage": "collecting",
+                           "cards": [], "comparison": None, "assumptions": [], "warnings": [],
+                           "history": history, "clarify_count": state.get("clarify_count", 0) + 1}
+    # Khách vừa từ chối so sánh -> thoát trạng thái chờ, tiếp tục thu thập.
+    if state.get("slot_stage") == "await_compare_confirm":
+        out["slot_stage"] = None
+    return out
+
+
+def confirm_compare_node(state: AgentState, config) -> AgentState:
+    """Đủ ngưỡng slot -> nhắc lại nhu cầu đã nắm và HỎI khách muốn khoanh top mấy để so sánh.
+    Chưa đề xuất gì cho tới khi khách đồng ý."""
+    slots = state.get("slots") or []
+    summ = slots_summary(slots)
+    lead = f"Dạ em đã nắm được: {summ}.\n\n" if summ else ""
+    text = (lead + "Anh/chị muốn em khoanh vùng **top mấy sản phẩm** phù hợp nhất để so sánh giúp mình ạ? "
+            "(ví dụ: top 3) — hoặc mình cứ nói thêm tiêu chí nếu muốn thu hẹp nữa nhé.")
+    history = state.get("history", []) + [{"role": "assistant", "content": text}]
+    log.info("confirm_compare_node: mời so sánh (filled=%d touched=%d)",
+             count_filled(slots), count_touched(slots))
+    return {"response": text, "question": text, "stage": "collecting",
             "cards": [], "comparison": None, "assumptions": [], "warnings": [], "history": history,
-            "clarify_count": state.get("clarify_count", 0) + 1}
+            "slot_stage": "await_compare_confirm", "offered_touched": count_touched(slots)}
 
 
 _CHITCHAT_FALLBACK = ("Dạ em luôn sẵn sàng trò chuyện ạ 😊 Em là trợ lý tư vấn điện máy — "
@@ -219,6 +329,51 @@ def unsupported_node(state: AgentState, config) -> AgentState:
             "cards": [], "comparison": None, "assumptions": [], "warnings": [], "history": history}
 
 
+_QUESTION_SYSTEM = (
+    "Bạn là nhân viên tư vấn điện máy thân thiện. Khách đang HỎI — nhiệm vụ duy nhất của bạn "
+    "là TRẢ LỜI đúng câu hỏi đó, ngắn gọn, dễ hiểu; TUYỆT ĐỐI không giới thiệu/đề xuất sản phẩm "
+    "mới trong lượt này.\n"
+    "- Số liệu (giá, thông số) CHỈ được lấy từ FACTS; không có trong FACTS thì nói thẳng "
+    "'dạ em chưa có dữ liệu về ... ạ'. Khái niệm/công nghệ giải thích bằng lời, không kèm số tự chế.\n"
+    "- Tồn kho, khuyến mãi, chính sách cửa hàng: luôn trả lời 'em chưa có dữ liệu'.\n"
+    "- Kết thúc bằng MỘT câu mời khách hỏi tiếp hoặc cho biết thêm nhu cầu, không ép mua."
+)
+
+_QUESTION_FALLBACK = ("Dạ câu này em chưa có đủ dữ liệu để trả lời chính xác ạ. "
+                      "Anh/chị cứ hỏi thêm hoặc cho em biết nhu cầu để em hỗ trợ tiếp nhé!")
+
+
+def question_node(state: AgentState, config) -> AgentState:
+    """Khách kết thúc lượt bằng câu hỏi: trả lời câu hỏi (grounded trên các máy đang tư vấn
+    nếu có), không đưa sản phẩm mới, không bảng so sánh."""
+    _notify(config, "Em đang trả lời câu hỏi của anh/chị…")
+    query = state.get("query", "")
+    last = state.get("last_products", []) or []
+    cards = [build_detail_card(r) for r in last[:3]]
+    facts = facts_for_llm(cards) if cards else "(chưa có sản phẩm nào trong ngữ cảnh)"
+    user = (f"FACTS:\n{facts}\n\nCâu hỏi của khách: \"{query}\"\n\n"
+            "Trả lời khách theo đúng quy tắc.")
+    llm = _cfg(config, "llm")
+    message = ""
+    if llm is not None:
+        try:
+            message = llm.complete_text(_QUESTION_SYSTEM, user)
+        except Exception as e:
+            log.warning("question: LLM lỗi (%s)", e)
+    if message:
+        result = verify_advice(AdviceResult(message=message, cards=cards, assumptions=[], warnings=[]))
+        if not is_grounded(result):
+            log.warning("question: FAIL-CLOSED — số không truy được nguồn (warnings=%s)",
+                        list(result.warnings))
+            message = ""
+    if not message:
+        message = _QUESTION_FALLBACK
+    log.info("question_node: answered (grounded trên %d sản phẩm)", len(cards))
+    history = state.get("history", []) + [{"role": "assistant", "content": message}]
+    return {"response": message, "stage": "collecting", "question": None,
+            "cards": [], "comparison": None, "assumptions": [], "warnings": [], "history": history}
+
+
 def detail_node(state: AgentState, config) -> AgentState:
     _notify(config, "Em đang tra cứu chi tiết sản phẩm…")
     query = state.get("query", "")
@@ -239,42 +394,64 @@ def detail_node(state: AgentState, config) -> AgentState:
 def retrieval_node(state: AgentState, config) -> AgentState:
     _notify(config, "Em đang tìm máy phù hợp trong catalog…")
     intent = state.get("intent", {})
+    slots = state.get("slots") or []
+    # Số sản phẩm khoanh vùng: nếu khách vừa trả lời "top mấy?" thì lấy theo đó.
+    top_n = state.get("top_n", 3)
+    if state.get("slot_stage") == "await_compare_confirm":
+        verdict, n = parse_compare_reply(state.get("query", ""))
+        if verdict == "yes":
+            top_n = n
+    top_n = max(2, min(4, top_n))
+    # Slot đã thu thập -> đưa vào truy vấn để lọc/xếp đúng nhu cầu ngành.
+    slot_txt = slots_summary(slots)
+    q_for_sql = state.get("query", "")
+    if slot_txt:
+        q_for_sql += f"\n[Nhu cầu đã khoanh vùng] {slot_txt}"
+
     res = None
     if (intent.get("declines_more_info") and intent.get("category")
-            and not intent.get("budget_max") and not intent.get("is_meta_inquiry")):
-        # Khách nhờ chọn giúp, chưa chốt ngân sách -> 3 đại diện rẻ/trung/cao thay vì top điểm.
+            and not intent.get("budget_max") and not slot_txt and not intent.get("is_meta_inquiry")):
+        # Khách nhờ chọn giúp, chưa có nhu cầu cụ thể -> 3 đại diện rẻ/trung/cao thay vì top điểm.
         res = price_spread_products(intent["category"], db_path=_cfg(config, "db_path"))
     elif not intent.get("is_meta_inquiry") and _cfg(config, "llm") is not None:
-        # Đường chính cho MỌI truy vấn tìm hàng (đơn giản lẫn ràng buộc thông số):
-        # tool SQL — AI soạn SELECT theo schema md, tự sửa tối đa 3 lần; thất bại -> khuôn cũ.
+        # Đường chính cho MỌI truy vấn tìm hàng: tool SQL — AI soạn SELECT theo schema md +
+        # slot đã khoanh vùng, tự sửa tối đa 3 lần; thất bại -> khuôn cũ.
         db_path = _cfg(config, "db_path")
         cat_table = category_table_for(intent["category"], db_path) if intent.get("category") else None
-        agent_res = agent_query(_cfg(config, "llm"), state.get("query", ""), intent,
-                                cat_table, db_path)
-        if agent_res is not None:
-            prods = hydrate_rows(agent_res["rows"], db_path) if agent_res.get("rows") else []
-            res = {"status": "custom_query" if prods else "no_products_found", 
-                   "sql_query": agent_res.get("sql", ""),
-                   "total_matches_found": len(prods),
-                   "top_3_products": prods[:3], "all_top_k": prods[:5]}
-        else:
-            log.info("retrieval_node: tool SQL không cho kết quả dùng được -> khuôn cũ")
+        agent_res = agent_query(_cfg(config, "llm"), q_for_sql, intent, cat_table, db_path)
+        if agent_res is not None and agent_res.get("rows"):
+            prods = hydrate_rows(agent_res["rows"], db_path)
+            if prods:
+                res = {"status": "custom_query", "sql_query": agent_res.get("sql", ""),
+                       "total_matches_found": len(prods),
+                       "top_3_products": prods[:top_n], "all_top_k": prods[:5]}
+        if res is None:
+            # SQL chặt quá -> 0 dòng: NỚI LỎNG về khuôn tìm mềm (category + ngân sách + xếp theo
+            # slot/ưu tiên) thay vì báo "không có". Chỉ thực sự no_products khi khuôn này cũng rỗng.
+            log.info("retrieval_node: tool SQL 0 dòng -> nới lỏng bằng khuôn tìm mềm")
     if res is None:
+        # Đưa các slot đã thu thập vào ưu tiên để khuôn mềm xếp hạng theo đúng nhu cầu.
+        prefs = list(intent.get("priority_features") or [])
+        prefs += [str(s.get("value")) for s in slots
+                  if s.get("status") == "filled" and s.get("value")]
         res = search_products(
             query=state.get("query", ""),
             category=intent.get("category"),
             max_price=intent.get("budget_max"),
             brand=intent.get("brand"),
-            priority_features=intent.get("priority_features"),
+            priority_features=prefs,
             top_k=5,
             db_path=_cfg(config, "db_path"),
             is_meta_inquiry=intent.get("is_meta_inquiry", False),
         )
-    log.info("retrieval_node: status=%s total=%s top3=%s | sql=%s",
-             res.get("status"), res.get("total_matches_found"),
+        res["top_3_products"] = res.get("top_3_products", [])[:top_n]
+    log.info("retrieval_node: status=%s total=%s top_n=%d top=%s | sql=%s",
+             res.get("status"), res.get("total_matches_found"), top_n,
              [product_display_name(r) for r in res.get("top_3_products", [])],
              res.get("sql_query"))
-    return {"retrieval": res, "last_products": res.get("top_3_products", []), "focused_sku": None}
+    # Xoá trạng thái chờ xác nhận sau khi đã đề xuất.
+    return {"retrieval": res, "last_products": res.get("top_3_products", []),
+            "focused_sku": None, "slot_stage": None, "top_n": top_n}
 
 
 def advisor_node(state: AgentState, config) -> AgentState:
@@ -315,9 +492,11 @@ def get_compiled_graph():
         wf = StateGraph(AgentState)
         wf.add_node("intent_node", intent_node)
         wf.add_node("clarify_node", clarify_node)
+        wf.add_node("confirm_compare_node", confirm_compare_node)
         wf.add_node("chitchat_node", chitchat_node)
         wf.add_node("meta_inquiry_node", meta_inquiry_node)
         wf.add_node("unsupported_node", unsupported_node)
+        wf.add_node("question_node", question_node)
         wf.add_node("detail_node", detail_node)
         wf.add_node("retrieval_node", retrieval_node)
         wf.add_node("advisor_node", advisor_node)
@@ -325,10 +504,13 @@ def get_compiled_graph():
         wf.add_node("verify_node", verify_node)
         wf.add_edge(START, "intent_node")
         wf.add_conditional_edges("intent_node", router_edge,
-                                 {"clarify": "clarify_node", "detail": "detail_node",
-                                  "chitchat": "chitchat_node", "meta_inquiry": "meta_inquiry_node",
-                                  "unsupported": "unsupported_node", "retrieve": "retrieval_node"})
+                                 {"clarify": "clarify_node", "confirm_compare": "confirm_compare_node",
+                                  "detail": "detail_node", "chitchat": "chitchat_node",
+                                  "meta_inquiry": "meta_inquiry_node", "unsupported": "unsupported_node",
+                                  "question": "question_node", "retrieve": "retrieval_node"})
         wf.add_edge("clarify_node", END)
+        wf.add_edge("confirm_compare_node", END)
+        wf.add_edge("question_node", END)
         wf.add_edge("chitchat_node", END)
         wf.add_edge("meta_inquiry_node", END)
         wf.add_edge("unsupported_node", END)

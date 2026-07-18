@@ -137,17 +137,27 @@ def agent_query(llm, user_query: str, intent: Dict[str, Any],
         "QUY TẮC:\n"
         "- Chỉ SELECT, một câu duy nhất, LIMIT tối đa 20.\n"
         "- Kết quả PHẢI có cột model_code (an toàn nhất: SELECT *). KHÔNG GROUP BY/tính gộp.\n"
-        "- Cần xếp theo giá thì lọc price_clean > 0 trước (0/NULL là chưa có giá, không phải miễn phí).\n"
+        "- GIÁ luôn nằm ở all_products.price_clean. Nếu truy vấn bảng ngành, hãy JOIN all_products "
+        "ON all_products.model_code = <bảng ngành>.model_code để lấy price_clean. TUYỆT ĐỐI KHÔNG dùng "
+        "cột giá của bảng ngành (giá gốc / giá khuyến mãi / price_promo_clean).\n"
+        "- CHỈ lọc price_clean khi khách nói ngân sách/giá; KHÔNG tự thêm 'price_clean > 0' làm điều kiện "
+        "(sẽ loại oan các máy chưa có giá).\n"
+        "- ĐỪNG áp CỨNG mọi tiêu chí thông số cùng lúc (AND nhiều LIKE dễ ra 0 dòng vì cách viết trong DB "
+        "khác nhau). Chỉ lọc CỨNG tối đa 1-2 ràng buộc chắc chắn nhất (VD khổ giấy, loại sản phẩm); các "
+        "tiêu chí còn lại đưa vào ORDER BY (CASE WHEN cột LIKE '%...%' THEN 0 ELSE 1 END) để XẾP máy khớp "
+        "nhiều lên đầu thay vì loại bỏ.\n"
+        "- Với ràng buộc SỐ (dung tích, tốc độ, inch...) dùng CAST(\"cột\" AS REAL) và so sánh khoảng rộng "
+        "(>=), đừng bắt bằng đúng.\n"
         "- Không bịa tên bảng/cột ngoài schema ở trên.\n"
-        "- TUYỆT ĐỐI không nới ngân sách hay ràng buộc khách đã nêu; nếu vì thế mà không có "
-        "sản phẩm nào thì chấp nhận trả 0 dòng (hệ thống sẽ tự xử lý phần tư vấn nới ngân sách).\n"
-        "- Nếu khách yêu cầu 'càng rẻ càng tốt', 'rẻ nhất' hoặc 'giá rẻ', BẮT BUỘC thêm mệnh đề ORDER BY price_clean ASC."
+        "- Nếu khách yêu cầu 'càng rẻ càng tốt'/'rẻ nhất'/'giá rẻ', thêm ORDER BY price_clean ASC (kèm "
+        "price_clean > 0)."
     )
     user = (f"Nhu cầu khách: {user_query}\n"
             f"Phiếu nhu cầu đã trích: category={intent.get('category')!r}, "
             f"budget_max={intent.get('budget_max')}, brand={intent.get('brand')!r}, "
             f"priority={intent.get('priority_features')}\n"
-            "Soạn SQL chọn sản phẩm phù hợp nhất.")
+            "Soạn SQL chọn sản phẩm phù hợp nhất — ưu tiên CÓ kết quả (xếp hạng độ khớp) hơn là lọc "
+            "cứng đến mức rỗng.")
     err_note = ""
     last_zero_sql: Optional[str] = None
     for attempt in range(1 + _MAX_REPAIRS):

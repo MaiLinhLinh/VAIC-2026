@@ -23,7 +23,7 @@ def kw_declines(query: str) -> bool:
 class IntentSchema(BaseModel):
     is_meta_inquiry: bool = Field(
         default=False,
-        description="True NẾU VÀ CHỈ NẾU tin nhắn cuối cùng của khách là một câu hỏi giải thích về khái niệm, thông số kỹ thuật (VD: 'màn hình OLED là gì?', 'Inverter có lợi gì?'), hoặc thắc mắc về tiêu chí (VD 'dung tích là sao?')."
+        description="True NẾU VÀ CHỈ NẾU khách hỏi giải thích khái niệm, thông số kỹ thuật (VD 'OLED là gì?'), thắc mắc về tiêu chí (VD 'dung tích là sao?'), HOẶC hỏi về các loại/dòng sản phẩm nói chung (VD 'tủ lạnh có những loại nào?', 'các loại máy tính')."
     )
     meta_reply: Optional[str] = Field(
         default=None,
@@ -67,7 +67,7 @@ class IntentSchema(BaseModel):
     )
     wants_comparison: bool = Field(
         default=False,
-        description="True nếu khách có ý định xem nhiều lựa chọn, so sánh, phân tích các mẫu khác nhau (VD: 'so sánh', 'có mấy loại', 'xem các option', 'mẫu nào tốt nhất'). False nếu khách chỉ hỏi một nhu cầu chung chung."
+        description="True NẾU VÀ CHỈ NẾU khách CHỦ ĐỘNG yêu cầu xem nhiều lựa chọn, so sánh, phân tích các mẫu khác nhau (VD: 'so sánh', 'có mấy loại', 'xem các option', 'mẫu nào tốt nhất'). False nếu khách chỉ đưa ra một nhu cầu chung chung và đang cần tư vấn 1 sản phẩm phù hợp nhất."
     )
     assumptions: List[str] = Field(
         default_factory=list,
@@ -265,7 +265,7 @@ def extract_intent(query: str, history: Optional[List[Dict[str, str]]] = None,
             "tivi, nồi cơm điện) và cũng KHÔNG thể dùng sản phẩm nào trong CSDL để thay thế: TUYỆT ĐỐI không gán bừa category gần đúng — để category=null, điền "
             "unsupported_product=<tên loại đó>, và chọn related_categories là 1-3 danh mục CÓ THẬT "
             "trong CSDL gần với nhu cầu đó nhất.\n"
-            "- is_meta_inquiry=true KHI VÀ CHỈ KHI tin nhắn hiện tại của khách là một câu hỏi yêu cầu giải thích về một khái niệm, thông số kỹ thuật (VD: 'màn OLED là gì?', 'Inverter là sao?') hoặc thắc mắc tiêu chí. Lúc này BẮT BUỘC điền meta_reply giải đáp ngắn gọn, dễ hiểu, nêu lợi ích thực tế rồi hỏi lại để tiếp tục tư vấn.\n"
+            "- is_meta_inquiry=true KHI VÀ CHỈ KHI khách hỏi yêu cầu giải thích về một khái niệm, thông số kỹ thuật (VD: 'màn OLED là gì?', 'dung tích là gì?'), thắc mắc tiêu chí, HOẶC hỏi về các phân loại sản phẩm (VD 'tủ lạnh có những dòng nào?'). Lúc này BẮT BUỘC điền meta_reply giải đáp ngắn gọn, nêu các phân loại phổ biến rồi hỏi lại để tiếp tục tư vấn. NẾU is_meta_inquiry=true, BẮT BUỘC để category=null và priority_features=[] để tránh hệ thống tự động tìm kiếm sản phẩm.\n"
             "- wants_comparison=true khi khách chủ động yêu cầu đưa ra nhiều sự lựa chọn hoặc so sánh (VD 'so sánh', 'có những option nào', 'các dòng máy'). False nếu khách chỉ nhờ tư vấn chung.\n"
             "- needs_clarification=true khi KHÁCH TRẢ LỜI QUÁ CHUNG CHUNG và bạn cần hỏi thêm để lọc sản phẩm (mục đích, bối cảnh người dùng, ngân sách). TUYỆT ĐỐI KHÔNG bật cờ này nếu khách đang hỏi ngược lại bạn (đó là is_meta_inquiry). False nếu khách vừa trả lời đủ hoặc từ chối bổ sung.\n"
             "- clarification_questions: 1-2 câu hỏi NGẮN, tự nhiên như người bán hàng thật, bám đúng bối cảnh "
@@ -299,14 +299,24 @@ def extract_intent(query: str, history: Optional[List[Dict[str, str]]] = None,
 
 def has_enough_slots(intent: Dict[str, Any]) -> bool:
     """Thông tin tối thiểu để tiến hành tìm kiếm mà không cần hỏi thêm."""
+    if intent.get("declines_more_info"):
+        return True
+
     cat = intent.get("category")
     budget = intent.get("budget_max")
     brand = intent.get("brand")
     feats = intent.get("priority_features", [])
-    if not cat and not budget and not brand and not feats:
+    
+    has_filter = bool(budget or brand or (feats and len(feats) > 0))
+    
+    if not cat and not has_filter:
         return False
-    if cat and (budget or brand or (feats and len(feats) > 0)):
-        return True
-    if intent.get("needs_clarification") and not (budget or (feats and len(feats) > 0)):
+        
+    # KHI VÀ CHỈ KHI có cat và có ít nhất 1 filter (giá, hãng, tính năng), thì mới đủ điều kiện.
+    if cat and not has_filter:
         return False
+        
+    if intent.get("needs_clarification") and not has_filter:
+        return False
+        
     return True
