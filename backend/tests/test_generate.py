@@ -30,8 +30,9 @@ def test_generate_advice_builds_cards_and_message():
 
 def test_generate_advice_empty_top3_no_llm_call():
     reco = Recommendation(top3=[], excluded=None, assumptions=[])
-    prof = NeedProfile(category="tu_lanh")
+    prof = NeedProfile(category="man_hinh", budget_max=15_000_000, constraints={"kích thước": [15, None]})
     fake = FakeLLM(text_responses=["should not be used"])
     result = generate_advice(reco, prof, fake)
     assert "chưa tìm được" in result.message.lower()
+    assert "15 inch" in result.message
     assert fake.calls == []          # không gọi LLM khi rỗng

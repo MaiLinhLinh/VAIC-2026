@@ -15,6 +15,53 @@ def mk(brand, price, dien):
                    spec_doc="inverter", promo_text=None, raw={})
 
 
+def mk_dishwasher(brand, price, water):
+    return Product(
+        category="Máy rửa chén",
+        category_code="may_rua_chen",
+        model_code=brand,
+        sku=brand,
+        brand=brand,
+        display_name=f"Máy rửa chén {brand}",
+        price=SourcedValue.of(price, "catalog"),
+        original_price=SourcedValue.of(price, "catalog"),
+        sale_price=SourcedValue.missing(),
+        specs={
+            "Tiêu thụ nước": SourcedValue.of(
+                water, "thông số nhà sản xuất", unit="lít/lần"
+            )
+        },
+        spec_doc="",
+        promo_text=None,
+        raw={},
+    )
+
+
+def mk_monitor(brand, price, size, response_time):
+    return Product(
+        category="Màn hình máy tính",
+        category_code="man_hinh",
+        model_code=brand,
+        sku=brand,
+        brand=brand,
+        display_name=f"Màn hình {brand} {size} inch",
+        price=SourcedValue.of(price, "catalog"),
+        original_price=SourcedValue.of(price, "catalog"),
+        sale_price=SourcedValue.missing(),
+        specs={
+            "Kích thước màn hình": SourcedValue.of(
+                size, "thông số nhà sản xuất", unit="inch"
+            ),
+            "Thời gian đáp ứng": SourcedValue.of(
+                response_time, "thông số nhà sản xuất", unit="ms"
+            ),
+        },
+        spec_doc="",
+        promo_text=None,
+        raw={},
+    )
+
+
 def store():
     return ProductStore([mk("A", 12_000_000, 300), mk("B", 11_000_000, 400), mk("C", 9_000_000, 380)])
 
@@ -81,3 +128,136 @@ def test_budget_up_intent_returns_pricier_alternatives():
     state, res2 = orch.handle_turn(state, "co loai nao cao cap hon khong em")
     assert res2.stage == "recommended" and res2.advice is not None
     assert any("15.000.000" in l.value for c in res2.advice.cards for l in c.lines)
+
+
+def test_empty_result_follow_up_returns_minimum_budget_and_named_product():
+    st = ProductStore([mk("A", 12_000_000, 300), mk("B", 11_000_000, 400)])
+    llm = FakeLLM(
+        json_responses=[{
+            "category": "tu_lanh", "budget_max": 5_000_000,
+            "constraints": {"số người": [3, 4]},
+            "prefs": ["tiết kiệm điện"],
+            "known": ["category", "budget_max", "constraints", "prefs"],
+        }],
+    )
+    orch = Orchestrator(st, llm)
+    state = ChatState(profile=NeedProfile(), asked=[], stage="collecting")
+
+    state, first = orch.handle_turn(state, "tủ lạnh dưới 5tr cho nhà 4 người, tiết kiệm điện")
+    assert first.advice is not None and not first.advice.cards
+    assert "chưa tìm được" in first.reply
+    assert first.advice.warnings == []
+
+    state, follow_up = orch.handle_turn(
+        state, "vậy ngân sách tối thiểu cho option trên là bao nhiêu với máy nào"
+    )
+
+    assert "11.000.000đ" in follow_up.reply
+    assert "Tủ lạnh B" in follow_up.reply
+    assert follow_up.advice is not None and follow_up.advice.cards
+
+
+def test_30m_quay_dau_dishwasher_flow_survives_wrong_llm_budget_direction():
+    st = ProductStore([
+        mk_dishwasher("Comfee", 5_990_000, 8.0),
+        mk_dishwasher("Bosch", 16_590_000, 9.0),
+    ])
+    llm = FakeLLM(
+        json_responses=[
+            {
+                "category": None,
+                "budget_min": 30_000_000,
+                "budget_max": None,
+                "constraints": {},
+                "prefs": [],
+                "known": ["budget_min"],
+            },
+            {
+                "category": None,
+                "budget_min": None,
+                "budget_max": None,
+                "constraints": {},
+                "prefs": ["tiết kiệm nước"],
+                "known": ["prefs"],
+            },
+        ],
+        text_responses=["Dạ em đã tìm được các máy phù hợp với ưu tiên tiết kiệm nước."],
+    )
+    orch = Orchestrator(st, llm)
+    state = ChatState(
+        profile=NeedProfile(category="may_rua_chen", constraints={"số người": [4, 4]}),
+        asked=["số bữa"],
+        stage="collecting",
+    )
+
+    state, budget_turn = orch.handle_turn(state, "khoảng 30tr quay đầu")
+    assert state.profile.budget_min is None
+    assert state.profile.budget_max == 30_000_000
+    assert budget_turn.question is not None and "ưu tiên" in budget_turn.question.lower()
+
+    state, preference_turn = orch.handle_turn(state, "tiết kiệm nước")
+    assert preference_turn.advice is not None
+    assert preference_turn.advice.cards
+
+
+def test_large_screen_answer_completes_clarification_instead_of_repeating_question():
+    llm = FakeLLM(
+        json_responses=[
+            {
+                "category": "man_hinh",
+                "budget_max": None,
+                "constraints": {},
+                "prefs": [],
+                "known": ["category"],
+            },
+            {
+                "category": None,
+                "budget_max": None,
+                "constraints": {},
+                "prefs": [],
+                "known": [],
+            },
+            {
+                "category": None,
+                "budget_min": 15_000_000,
+                "budget_max": 15_000_000,
+                "constraints": {},
+                "prefs": [],
+                "known": ["budget_min", "budget_max"],
+            },
+            {
+                "category": None,
+                "budget_max": None,
+                "constraints": {},
+                "prefs": [],
+                "known": [],
+            },
+        ],
+        text_responses=["Dạ em đã tìm được các màn hình phù hợp với nhu cầu của anh/chị."],
+    )
+    orch = Orchestrator(ProductStore([
+        mk_monitor("A", 8_000_000, 27, 1),
+        mk_monitor("B", 12_000_000, 32, 1),
+        mk_monitor("C", 14_000_000, 34, 0.5),
+    ]), llm)
+    state = ChatState(profile=NeedProfile(), asked=[], stage="collecting")
+
+    state, res1 = orch.handle_turn(state, "mua màn hình")
+    assert res1.question is not None and "làm gì" in res1.question.lower()
+
+    state, res2 = orch.handle_turn(state, "game")
+    assert res2.question is not None and "ngân sách" in res2.question.lower()
+    assert state.profile.prefs == ["chơi game"]
+
+    state, res3 = orch.handle_turn(state, "15 củ")
+    assert res3.question is not None and "inch" in res3.question.lower()
+    assert state.profile.budget_min is None
+    assert state.profile.budget_max == 15_000_000
+
+    state, res4 = orch.handle_turn(state, "càng to càng tốt")
+    assert res4.stage == "recommended"
+    assert res4.question is None
+    assert res4.advice is not None
+    assert len(res4.advice.cards) == 3
+    assert res4.advice.warnings == []
+    assert state.profile.prefs == ["chơi game", "màn hình lớn"]

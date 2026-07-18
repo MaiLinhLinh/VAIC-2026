@@ -1,39 +1,55 @@
 from __future__ import annotations
-from app.schemas import NeedProfile
-from app.llm.client import LLMClient
-from app.nlu.preprocess import expand_shorthand, parse_budget_vnd, detect_category
+
+import re
+
 from app.catalog.category_config import CATEGORY_CONFIGS
+from app.llm.client import LLMClient
+from app.nlu.preprocess import (
+    canonical_constraint_key,
+    declined_clarification,
+    detect_category,
+    expand_shorthand,
+    extract_explicit_demographics,
+    parse_budget_vnd,
+    parse_monitor_purpose,
+    parse_people_count,
+    parse_screen_size_inches,
+    prefers_large_screen,
+    strip_accents,
+)
+from app.schemas import NeedProfile
+
+
+_VALID_CODES = frozenset(CATEGORY_CONFIGS)
+_CATEGORY_OPTIONS = ", ".join(CATEGORY_CONFIGS)
+_CATEGORY_SCHEMA_VALUES = "|".join([*CATEGORY_CONFIGS, "null"])
+_DEMOGRAPHIC_KEYS = {"độ tuổi", "đối tượng", "giới tính", "nghề nghiệp"}
 
 NEED_SYSTEM_PROMPT = (
-    "Bạn là bộ phân tích nhu cầu mua điện máy. Chỉ trích xuất những gì khách HÀNG NÓI RÕ. "
-    "TUYỆT ĐỐI không suy đoán thông tin khách chưa nêu — thông tin thiếu để trống (null), "
-    "không tự bịa. category chỉ nhận một trong: "
-    "tu_lanh, may_say, may_rua_chen, tu_mat, dong_ho, man_hinh (hoặc null nếu không rõ). "
-    "budget tính bằng VND (số nguyên đồng). prefs là các cụm ưu tiên ngắn gọn tiếng Việt có dấu "
-    "(vd: 'tiết kiệm điện', 'ít ồn', 'pin lâu', 'màn hình lớn', 'chơi game'). "
-    "constraints chứa ràng buộc cứng khách nêu (vd số người, kích thước). "
-    "demographics chứa suy luận nhân khẩu học CHỈ khi khách nói rõ (vd 'cho bé' -> {\"đối tượng\":\"trẻ em\"}). "
-    "known liệt kê tên các trường đã điền được."
+    "Bạn là bộ phân tích nhu cầu mua điện máy. Chỉ trích xuất dữ kiện khách nói rõ; "
+    "thông tin thiếu phải để trống, tuyệt đối không suy đoán từ tên hay cách xưng hô. "
+    f"category chỉ nhận một trong: {_CATEGORY_OPTIONS} (hoặc null nếu không rõ). "
+    "budget_min/budget_max là số nguyên VND. constraints dùng khóa chuẩn: 'số người', "
+    "'khối lượng', 'dung tích', 'người dùng', 'mục đích', 'kích thước', 'kiểu dáng'. "
+    "prefs là các ưu tiên ngắn gọn tiếng Việt. Câu trả lời ngắn như 'gaming', '24 inch', "
+    "'cho bé' vẫn phải được trích xuất; câu sửa 'không phải..., mà...' chỉ lấy giá trị mới. "
+    "demographics chỉ dùng khóa 'độ tuổi', 'đối tượng', 'giới tính', 'nghề nghiệp' và phải "
+    "có bằng chứng ngay trong lời khách. known liệt kê các trường đã điền."
 )
 
 NEED_SCHEMA_HINT = (
-    '{"category": "tu_lanh|null", "budget_min": int|null, "budget_max": int|null, '
-    '"constraints": {}, "prefs": [], "demographics": {}, "known": []}'
+    f'{{"category": "{_CATEGORY_SCHEMA_VALUES}", "budget_min": int|null, '
+    '"budget_max": int|null, "constraints": {}, "prefs": [], "demographics": {}, "known": []}'
 )
-
-_VALID_CODES = set(CATEGORY_CONFIGS.keys())
-_DECLINE_PHRASES = ["gợi ý đại", "goi y dai", "sao cũng được", "sao cung duoc", "tùy em", "tuy em", "gì cũng được"]
 
 
 def _to_profile(data: dict) -> NeedProfile:
-    cat = data.get("category")
-    if cat not in _VALID_CODES:
-        cat = None
-    known = list(data.get("known") or [])
-    if cat is None and "category" in known:
-        known.remove("category")
+    category = data.get("category")
+    if category not in _VALID_CODES:
+        category = None
+    known = [field for field in data.get("known") or [] if field != "category" or category]
     return NeedProfile(
-        category=cat,
+        category=category,
         budget_min=data.get("budget_min"),
         budget_max=data.get("budget_max"),
         constraints=data.get("constraints") or {},
@@ -43,30 +59,112 @@ def _to_profile(data: dict) -> NeedProfile:
     )
 
 
+def _mark(profile: NeedProfile, field: str, present: bool) -> None:
+    profile.known = [item for item in profile.known if item != field]
+    if present:
+        profile.known.append(field)
+
+
+def _canonicalize_constraints(constraints: dict) -> dict:
+    result: dict = {}
+    for key, value in constraints.items():
+        target = canonical_constraint_key(key) if isinstance(key, str) and not key.startswith("_") else key
+        if target not in result or key == target:
+            result[target] = value
+    return result
+
+
+def _expects_people_answer(prior: NeedProfile | None) -> bool:
+    if not prior or not prior.category or "số người" in prior.constraints:
+        return False
+    return any(slot.kind == "people" and slot.importance >= 2
+               for slot in CATEGORY_CONFIGS[prior.category].ask_slots)
+
+
+def _ground_demographics(message: str, extracted: dict) -> dict[str, str]:
+    """Keep arbitrary LLM values only when their literal value occurs in the message."""
+    grounded = extract_explicit_demographics(message)
+    flat = " ".join(strip_accents(message.lower()).split())
+    for key, value in extracted.items():
+        if key not in _DEMOGRAPHIC_KEYS or not isinstance(value, str):
+            continue
+        evidence = " ".join(strip_accents(value.lower()).split())
+        if evidence and re.search(rf"\b{re.escape(evidence)}\b", flat):
+            grounded.setdefault(key, value)
+    return grounded
+
+
+def _merge_turn(prior: NeedProfile | None, current: NeedProfile) -> NeedProfile:
+    if prior is None:
+        return current
+    if prior.category and current.category and prior.category != current.category:
+        current.demographics = {**prior.demographics, **current.demographics}
+        _mark(current, "demographics", bool(current.demographics))
+        current.known = list(dict.fromkeys(current.known))
+        return current
+
+    merged = prior.merge(current)
+    current_purposes = {parse_monitor_purpose(pref) for pref in current.prefs}
+    current_purposes.discard(None)
+    if current_purposes:
+        merged.prefs = [pref for pref in merged.prefs
+                        if parse_monitor_purpose(pref) is None or pref in current.prefs]
+    return merged
+
+
+def _replace_preference(profile: NeedProfile, value: str, family) -> None:
+    profile.prefs = [pref for pref in profile.prefs if not family(pref)]
+    profile.prefs.append(value)
+    _mark(profile, "prefs", True)
+
+
 def parse_need(message: str, llm: LLMClient, prior: NeedProfile | None = None) -> NeedProfile:
     expanded = expand_shorthand(message)
-    raw = llm.complete_json(NEED_SYSTEM_PROMPT, expanded, schema_hint=NEED_SCHEMA_HINT)
-    prof = _to_profile(raw)
+    profile = _to_profile(
+        llm.complete_json(NEED_SYSTEM_PROMPT, expanded, schema_hint=NEED_SCHEMA_HINT)
+    )
+    profile.constraints = _canonicalize_constraints(profile.constraints)
 
-    # Deterministic fallback: bù category & budget nếu LLM bỏ sót
-    if prof.category is None:
-        det = detect_category(message)
-        if det:
-            prof.category = det
-            prof.known.append("category")
-    if prof.budget_max is None and prof.budget_min is None:
-        lo, hi = parse_budget_vnd(expanded)
-        if hi is not None:
-            prof.budget_max = hi
-            prof.known.append("budget_max")
-        if lo is not None:
-            prof.budget_min = lo
-            prof.known.append("budget_min")
+    if profile.category is None:
+        profile.category = detect_category(message)
+        _mark(profile, "category", profile.category is not None)
 
-    flat = message.lower()
-    if any(p in flat for p in _DECLINE_PHRASES):
-        prof.constraints["_khong_muon_tra_loi"] = True
-        prof.known.append("_khong_muon_tra_loi")
+    explicit_budget = parse_budget_vnd(expanded)
+    if explicit_budget != (None, None):
+        profile.budget_min, profile.budget_max = explicit_budget
+        _mark(profile, "budget_min", profile.budget_min is not None)
+        _mark(profile, "budget_max", profile.budget_max is not None)
 
-    prof.known = list(dict.fromkeys(prof.known))
-    return prior.merge(prof) if prior else prof
+    # Numeric hard filters require text evidence; do not trust an unsupported model guess.
+    profile.constraints.pop("số người", None)
+    people = parse_people_count(message, allow_bare=_expects_people_answer(prior))
+    if people:
+        profile.constraints["số người"] = list(people)
+
+    active_category = profile.category or (prior.category if prior else None)
+    purpose = parse_monitor_purpose(message)
+    if purpose and active_category == "man_hinh":
+        _replace_preference(profile, purpose, lambda pref: parse_monitor_purpose(pref) is not None)
+    if prefers_large_screen(message) and active_category in {"man_hinh", "dong_ho"}:
+        _replace_preference(profile, "màn hình lớn", prefers_large_screen)
+
+    size = parse_screen_size_inches(message)
+    if size is not None and active_category in {"man_hinh", "dong_ho"}:
+        profile.constraints["kích thước"] = list(size) if isinstance(size, tuple) else size
+
+    _mark(profile, "constraints", bool(profile.constraints))
+    profile.demographics = _ground_demographics(message, profile.demographics)
+    _mark(profile, "demographics", bool(profile.demographics))
+
+    if declined_clarification(message):
+        profile.constraints["_khong_muon_tra_loi"] = True
+        profile.known.append("_khong_muon_tra_loi")
+
+    profile.known = list(dict.fromkeys(profile.known))
+    merged = _merge_turn(prior, profile)
+    # NeedProfile.merge treats None as "not supplied". Explicit bounds instead replace both sides.
+    if explicit_budget != (None, None):
+        merged.budget_min, merged.budget_max = explicit_budget
+        _mark(merged, "budget_min", merged.budget_min is not None)
+        _mark(merged, "budget_max", merged.budget_max is not None)
+    return merged

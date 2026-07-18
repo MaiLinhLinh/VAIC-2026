@@ -3,6 +3,9 @@ from typing import Literal
 from app.schemas import NeedProfile, ScoredProduct
 from app.catalog.loader import ProductStore
 from app.retrieval.engine import RetrievalEngine
+from app.retrieval.filters import apply_hard_filters
+from app.retrieval.scoring import score_products
+from app.catalog.category_config import config_for
 from app.advice.provenance import format_vnd
 
 
@@ -18,6 +21,26 @@ def budget_alternatives(profile: NeedProfile, store: ProductStore,
         alt.budget_max = int(anchor * 1.4) if anchor else None
     reco = RetrievalEngine(store).recommend(alt)
     return reco.top3
+
+
+def minimum_budget_options(profile: NeedProfile, store: ProductStore) -> list[ScoredProduct]:
+    """Return the cheapest priced products after removing only the old budget bounds."""
+    relaxed = profile.model_copy(deep=True)
+    relaxed.budget_min = None
+    relaxed.budget_max = None
+    candidates = apply_hard_filters(store.by_category(relaxed.category), relaxed)
+    scored = score_products(candidates, relaxed)
+
+    recognized_prefs = {
+        pref for pref in relaxed.prefs if pref in config_for(relaxed.category).pref_lexicon
+    }
+    if recognized_prefs:
+        with_pref_data = [sp for sp in scored if recognized_prefs.issubset(set(sp.matched))]
+        if with_pref_data:
+            scored = with_pref_data
+
+    priced = [sp for sp in scored if sp.product.price.available]
+    return sorted(priced, key=lambda sp: (int(sp.product.price.value), -sp.score))[:3]
 
 
 def describe_tradeoff(cheaper: ScoredProduct, current_price: int) -> str:
