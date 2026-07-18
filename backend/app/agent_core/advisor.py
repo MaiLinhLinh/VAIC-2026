@@ -1,0 +1,105 @@
+from __future__ import annotations
+from typing import Any, Callable, Dict, List, Optional, Tuple
+from app.schemas import AdviceResult, FactCard
+from app.agent_core.presenters import build_reco_card
+from app.agent_core.retriever import get_catalog_metadata
+from app.advice.provenance import facts_for_llm, format_vnd
+from app.advice.verify import allowed_numbers, line_is_grounded, verify_advice, is_grounded
+
+_SYSTEM = (
+    "Bạn là chuyên gia tư vấn điện máy. NGUYÊN TẮC:\n"
+    "1. CHỈ tư vấn dựa trên FACTS cung cấp; tuyệt đối không bịa thông số/giá ngoài FACTS.\n"
+    "2. Trình bày thông số bằng lợi ích thực tế (Inverter -> tiết kiệm điện, RAM lớn -> đa nhiệm mượt).\n"
+    "3. Phân tích đánh đổi (trade-off) rõ giữa các lựa chọn để khách dễ quyết.\n"
+    "4. Nếu trạng thái là budget_fallback: nói rõ không có sản phẩm trong ngân sách đó, rồi giới thiệu "
+    "các mẫu giá gần nhất và ưu điểm để khách cân nhắc tăng ngân sách.\n"
+    "5. Giọng chuyên nghiệp, mạch lạc, súc tích, đúng ngữ pháp."
+)
+
+
+def build_cards(rows: List[Dict[str, Any]], priority_features: List[str]) -> List[FactCard]:
+    return [build_reco_card(r, priority_features) for r in rows]
+
+
+def deterministic_message(intent: Dict[str, Any], status: str, db_path: Optional[str] = None) -> Optional[str]:
+    """Copy tất định cho meta_inquiry / no_products_found; None nếu cần LLM."""
+    if status == "meta_inquiry":
+        meta = get_catalog_metadata(db_path)
+        cats = ", ".join(f"**{c}**" for c in meta["categories"])
+        return (f"Chào bạn, hệ thống hiện có **{len(meta['categories'])} danh mục** chính:\n\n{cats}\n\n"
+                "Bạn quan tâm danh mục nào, ngân sách và tính năng ra sao ạ?")
+    if status == "no_products_found":
+        cat = f" thuộc danh mục **{intent['category']}**" if intent.get("category") else ""
+        bud = (f" trong mức dưới **{format_vnd(int(intent['budget_max']))}**"
+               if intent.get("budget_max") else "")
+        return (f"Rất tiếc, hiện chưa có sản phẩm nào{cat}{bud} khớp yêu cầu của bạn.\n\n"
+                "Bạn thử nới ngân sách, đổi thương hiệu hoặc danh mục khác nhé!")
+    return None
+
+
+def generate_advisor(query: str, intent: Dict[str, Any], rows: List[Dict[str, Any]],
+                     status: str, llm, cards: List[FactCard],
+                     on_delta: Optional[Callable[[str], None]] = None) -> Tuple[str, bool, List[str]]:
+    """Sinh tư vấn top-3 + trade-off. Trả (message, streamed, warnings). Fail-closed nếu bịa số."""
+    det = deterministic_message(intent, status, None)
+    if det is not None:
+        return det, False, []
+    if not rows:
+        return ("Rất tiếc, hiện chưa có sản phẩm phù hợp. Bạn thử nới ngân sách hoặc đổi tiêu chí nhé!",
+                False, [])
+
+    facts = facts_for_llm(cards)
+    user = (f"Trạng thái tìm kiếm: {status}\nFACTS (chỉ dùng dữ kiện này):\n{facts}\n\n"
+            f"Nhu cầu khách: {query}\n\nHãy tư vấn top sản phẩm kèm phân tích trade-off.")
+
+    # Streaming: phát từng dòng đã verify (line-level fail-closed).
+    if on_delta is not None:
+        allowed = allowed_numbers(cards)
+        parts: List[str] = []
+        buf = ""
+        emitting = True
+
+        def push(line: str) -> None:
+            nonlocal emitting
+            if emitting and line_is_grounded(line, allowed):
+                on_delta(line)
+            else:
+                emitting = False
+
+        try:
+            for token in llm.stream_text(_SYSTEM, user):
+                parts.append(token)
+                buf += token
+                while "\n" in buf:
+                    line, buf = buf.split("\n", 1)
+                    push(line + "\n")
+            if buf:
+                push(buf)
+        except Exception:
+            return _blocking(llm, user, cards)
+        result = verify_advice(AdviceResult(message="".join(parts), cards=cards, assumptions=[], warnings=[]))
+        if not is_grounded(result):
+            return _safe_summary(cards), False, list(result.warnings)
+        return result.message, emitting, []
+
+    return _blocking(llm, user, cards)
+
+
+def _blocking(llm, user: str, cards: List[FactCard]) -> Tuple[str, bool, List[str]]:
+    try:
+        message = llm.complete_text(_SYSTEM, user)
+    except Exception:
+        return _safe_summary(cards), False, []
+    result = verify_advice(AdviceResult(message=message, cards=cards, assumptions=[], warnings=[]))
+    if not is_grounded(result):
+        return _safe_summary(cards), False, list(result.warnings)
+    return result.message, False, []
+
+
+def _safe_summary(cards: List[FactCard]) -> str:
+    lines = ["Dạ em gợi ý các máy sau (thông tin lấy trực tiếp từ catalog):"]
+    for i, c in enumerate(cards, 1):
+        price = next((l.value for l in c.lines if l.label == "Giá"), "chưa có dữ liệu")
+        title = c.title.replace("Vì sao em đề xuất ", "").rstrip("?")
+        lines.append(f"{i}. {title} — giá {price}.")
+    return "\n".join(lines)
