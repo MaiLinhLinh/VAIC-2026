@@ -5,6 +5,7 @@ from app.llm.client import LLMClient
 from app.advice.provenance import build_fact_card
 from app.advice.generate import advice_prompt, generate_advice
 from app.advice.verify import allowed_numbers, line_is_grounded, verify_advice
+from app.advice.compare import build_comparison
 
 
 def stream_advice(reco: Recommendation, profile: NeedProfile, llm: LLMClient,
@@ -49,5 +50,6 @@ def stream_advice(reco: Recommendation, profile: NeedProfile, llm: LLMClient,
         return verify_advice(generate_advice(reco, profile, llm)), False
 
     advice = verify_advice(AdviceResult(message="".join(parts), cards=cards,
-                                        assumptions=reco.assumptions, warnings=[]))
+                                        assumptions=reco.assumptions, warnings=[],
+                                        comparison=build_comparison(reco.top3, profile)))
     return advice, emitting

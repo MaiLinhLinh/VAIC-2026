@@ -194,3 +194,19 @@ header button:hover { background: rgba(255, 255, 255, 0.32); }
 @media (prefers-reduced-motion: reduce) {
   .msg, .typing .dots span, .why-btn .chev, .composer button .spinner { animation: none; transition: none; }
 }
+
+/* Bảng so sánh ứng viên (Part C) — khớp design token của UI mới */
+.compare {
+  background: #fff; border: 1px solid var(--sky-100); border-radius: 14px;
+  padding: 12px 14px; margin-top: 8px; box-shadow: var(--shadow-soft);
+}
+.compare-title { font-weight: 800; color: var(--sky-700); margin-bottom: 8px; }
+.compare-scroll { overflow-x: auto; }
+.compare table { border-collapse: collapse; width: 100%; font-size: 13px; }
+.compare th, .compare td { border: 1px solid var(--sky-100); padding: 7px 9px; text-align: left; vertical-align: top; }
+.compare thead th { background: var(--sky-50); color: var(--sky-700); font-weight: 700; }
+.compare td.crit, .compare th.crit-h { background: #f8fbff; white-space: nowrap; color: var(--ink-muted); }
+.compare .hint { color: var(--ink-muted); font-weight: 400; font-size: 11px; }
+.compare td.best { background: var(--sky-100); font-weight: 700; color: var(--sky-700); }
+.compare td.na { color: var(--amber); font-style: italic; }
+.compare-note { color: var(--ink-muted); font-size: 11px; margin-top: 7px; }

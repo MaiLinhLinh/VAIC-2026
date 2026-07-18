@@ -2,18 +2,20 @@ from __future__ import annotations
 import re
 from typing import Callable, Optional
 from pydantic import BaseModel, Field
-from app.schemas import NeedProfile, AdviceResult
+from app.schemas import NeedProfile, AdviceResult, Product
 from app.llm.client import LLMClient
 from app.catalog.loader import ProductStore
 from app.nlu.parser import parse_need
-from app.nlu.preprocess import strip_accents
+from app.nlu.preprocess import strip_accents, detect_category
 from app.dialogue.clarify import next_question, should_recommend, assumptions_for
 from app.retrieval.engine import RetrievalEngine
 from app.advice.generate import generate_advice
 from app.advice.streaming import stream_advice
 from app.advice.verify import verify_advice, is_grounded
 from app.advice.provenance import build_fact_card, format_vnd
+from app.advice.compare import build_comparison
 from app.advice.budget import budget_alternatives, describe_tradeoff, minimum_budget_options
+from app.advice.detail import resolve_product, is_detail_question, answer_about_product
 
 _BUDGET_INTENTS = (
     ("minimum", re.compile(
@@ -27,6 +29,13 @@ _BUDGET_INTENTS = (
         r"\b(?:cao cap hon|dat hon|(?:nang|tang) ngan sach|chi them tien|loai xin hon)\b"
     )),
 )
+_LIST_KW = ["may khac", "san pham khac", "cai khac", "lua chon khac", "danh sach",
+            "may nao khac", "con gi khac", "quay lai", "xem lai danh sach", "so sanh lai"]
+
+
+def _wants_product_list(message: str) -> bool:
+    flat = strip_accents(message.lower())
+    return any(k in flat for k in _LIST_KW)
 
 
 class ChatState(BaseModel):
@@ -34,6 +43,8 @@ class ChatState(BaseModel):
     asked: list[str] = Field(default_factory=list)
     stage: str = "collecting"
     last_top_price: int | None = None
+    last_products: list[Product] = Field(default_factory=list)   # ứng viên của lần đề xuất gần nhất
+    focused_sku: str | None = None                              # máy đang được hỏi sâu (multi-turn)
 
 
 class TurnResult(BaseModel):
@@ -77,11 +88,16 @@ class Orchestrator:
                 on_status(text)
 
         if state.stage == "recommended":
+            # a) Nâng / hạ / hỏi mức ngân sách tối thiểu
             intent = _budget_intent(message)
             if intent == "minimum" and state.profile.category:
                 return self._minimum_budget_turn(state)
             if intent in {"down", "up"} and state.last_top_price:
                 return self._budget_turn(state, intent)
+            # b) Hỏi kỹ về MỘT sản phẩm cụ thể trong danh sách vừa đề xuất (deep-dive)
+            detail = self._detail_turn(state, message)
+            if detail is not None:
+                return detail
 
         notify("Em đang đọc yêu cầu của anh/chị…")
         state.profile = parse_need(message, self.llm, prior=state.profile)
@@ -114,6 +130,8 @@ class Orchestrator:
                     advice = verify_advice(advice)
                 streamed = False
             state.stage = "recommended"
+            state.last_products = [s.product for s in reco.top3]
+            state.focused_sku = None
             state.last_top_price = (reco.top3[0].product.price.value
                                     if reco.top3 and reco.top3[0].product.price.available else None)
             reply = advice.message if not advice.cards or is_grounded(advice) else _safe_summary(advice)
@@ -141,10 +159,47 @@ class Orchestrator:
         for a in alts:
             lines.append("- " + describe_tradeoff(a, state.last_top_price))
         # Message is built deterministically from catalog prices (format_vnd) -> grounded by construction.
-        advice = AdviceResult(message="\n".join(lines), cards=cards, assumptions=[], warnings=[])
+        advice = AdviceResult(message="\n".join(lines), cards=cards, assumptions=[], warnings=[],
+                              comparison=build_comparison(alts, state.profile))
+        state.last_products = [a.product for a in alts]
+        state.focused_sku = None
         if alts[0].product.price.available:
             state.last_top_price = alts[0].product.price.value
         return state, TurnResult(reply=advice.message, stage="recommended", advice=advice, need=state.profile)
+
+    def _answer_focus(self, state: ChatState, product: Product, message: str):
+        state.focused_sku = product.sku
+        advice = answer_about_product(product, message, self.llm)
+        return state, TurnResult(reply=advice.message, stage="recommended",
+                                 advice=advice, need=state.profile)
+
+    def _detail_turn(self, state: ChatState, message: str):
+        """Hỏi sâu 1 sản phẩm. 'Sticky focus': đã focus máy nào thì hỏi tiếp áp vào máy đó.
+        Trả None nếu không phải luồng hỏi-chi-tiết -> để luồng thường xử lý (tìm kiếm/đề xuất)."""
+        # Khách chuyển sang ngành hàng khác -> tìm kiếm mới
+        new_cat = detect_category(message)
+        if new_cat is not None and new_cat != state.profile.category:
+            return None
+
+        # Nhắc tới một máy cụ thể (vị trí/hãng/rẻ-đắt nhất) -> focus máy đó
+        p = resolve_product(message, state.last_products)
+        if p is not None:
+            return self._answer_focus(state, p, message)
+
+        # Đang focus 1 máy & không đòi xem lại danh sách -> hỏi tiếp về máy đó
+        if state.focused_sku and not _wants_product_list(message):
+            focused = next((x for x in state.last_products if x.sku == state.focused_sku), None)
+            if focused is not None:
+                return self._answer_focus(state, focused, message)
+
+        # Chưa focus máy nào nhưng có ý hỏi chi tiết -> hỏi lại cho rõ
+        if is_detail_question(message) and state.last_products:
+            names = " · ".join(f"{i+1}. {x.display_name}"
+                               for i, x in enumerate(state.last_products))
+            return state, TurnResult(
+                reply=f"Dạ anh/chị muốn tìm hiểu kỹ máy nào ạ? ({names})",
+                stage="recommended", need=state.profile)
+        return None
 
     def _minimum_budget_turn(self, state: ChatState):
         options = minimum_budget_options(state.profile, self.store)
