@@ -214,6 +214,7 @@ header button:hover { background: rgba(255, 255, 255, 0.32); }
   .product-cards-container {
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   }
+}
 /* ===== Recommendation cards ===== */
 .card {
   background: #fff; border: 1px solid var(--card-border); border-radius: 0;
