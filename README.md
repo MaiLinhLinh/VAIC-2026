@@ -56,6 +56,8 @@ Biến môi trường (`backend/.env`, mẫu ở `backend/.env.example`):
 | `DATASET_PATH` | Đường dẫn `Dataset.xlsx` | `../Dataset.xlsx` |
 | `CATALOG_PATH` | Đường dẫn catalog đã chuẩn hoá | `./data/catalog.normalized.json` |
 | `ENABLE_EMBEDDINGS` | Bật re-rank ngữ nghĩa (semantic) tuỳ chọn, cần cài `sentence-transformers` | `false` |
+| `PIPELINE` | Luồng phục vụ: `agent_core` (LangGraph + SQLite, mặc định) hoặc `orchestrator` (bản cũ, fallback) | `agent_core` |
+| `AGENT_DB_PATH` | DB SQLite của agent_core (dùng khi `PIPELINE=agent_core`) | `backend/app/agent_core/products.db` |
 
 ### Frontend
 
@@ -92,8 +94,11 @@ backend/
     dialogue/        # chính sách hỏi ngược (clarify): tối đa 3 câu, không hỏi lại
     retrieval/       # hard filter + deterministic scoring + why-not + semantic re-rank (tuỳ chọn)
     advice/          # provenance (fact card có nguồn) + generate (LLM) + verify (guardrail) + budget (nâng/hạ)
-    orchestrator.py  # điều phối 1 lượt hội thoại (turn)
-    main.py          # FastAPI app (/api/chat, /api/reset, /api/health)
+    agent_core/      # LUỒNG MẶC ĐỊNH: agent-graph LangGraph (StateGraph + MemorySaver) trên SQLite
+                     #   intent -> router -> {clarify | detail | retrieve -> advisor -> compare -> verify}
+                     #   DeepSeek qua DeepSeekClient; guardrail fail-closed tái dùng advice/verify.py
+    orchestrator.py  # luồng cũ (fallback qua PIPELINE=orchestrator); điều phối 1 lượt hội thoại (turn)
+    main.py          # FastAPI app (/api/chat, /api/reset, /api/health); chọn engine theo cờ PIPELINE
     session.py       # session state trong RAM, không log nội dung khách (PII-safe)
   scripts/build_catalog.py   # sinh data/catalog.normalized.json từ Dataset.xlsx
   eval/               # scenarios.jsonl + run_eval.py (category_acc, hallucination_rate...)
