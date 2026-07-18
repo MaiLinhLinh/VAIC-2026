@@ -116,3 +116,19 @@ Mọi câu trả lời có đề xuất sản phẩm đi qua 3 lớp bảo vệ 
 3. Verifier xác định lại **mọi con số** trong câu trả lời của LLM; số nào không truy được về fact card sẽ khiến hệ thống **fail-closed**: bỏ câu trả lời của LLM, thay bằng bản tóm tắt dựng trực tiếp từ dữ liệu catalog (`_safe_summary` trong `orchestrator.py`).
 
 Kết quả: `eval/run_eval.py` đo `hallucination_rate` trên tập kịch bản — bằng thiết kế, câu trả lời được gắn nguồn đúng cách sẽ luôn cho 0.0; test `tests/test_eval.py` khẳng định câu trả lời cố tình bịa (ungrounded) bị verifier phát hiện và trả về 1.0.
+
+
+Thuần frontend (không đụng backend):
+- Redesign theme xanh da trời, chip gợi ý, sửa chat hòa nền → styles.css, App.jsx, Message.jsx, SourcePanel.jsx, QuickSuggestions.jsx
+- Lời chào GREETING (làm mới + đổi câu chữ) → App.jsx
+- Vừa rồi: bỏ disable input, autoFocus, nút spinner "đang trả lời" → App.jsx + vài dòng styles.css
+- api.js thêm sendChatStream (vẫn là frontend)
+
+Có sửa backend (chỉ cho tính năng streaming, không phải UI):
+- app/main.py — endpoint SSE /api/chat/stream + cắt lát hiển thị
+- app/orchestrator.py — thêm callback on_status/on_delta (tham số tùy chọn, hành vi cũ giữ nguyên)
+- app/llm/client.py — thêm stream_text (stream:true)
+- app/advice/generate.py — tách hàm build prompt (refactor, không đổi logic)
+- app/advice/verify.py — thêm line_is_grounded
+- app/advice/streaming.py — file mới
+- Tests: test_api.py (thêm test), test_streaming.py (mới)
