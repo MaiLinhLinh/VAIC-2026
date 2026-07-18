@@ -39,6 +39,7 @@ class Product(BaseModel):
     specs: dict[str, SourcedValue] = Field(default_factory=dict)
     spec_doc: str = ""
     promo_text: str | None = None
+    productidweb: str | None = None
     raw: dict[str, Any] = Field(default_factory=dict)
 
     def number(self, field: str) -> float | None:
@@ -102,10 +103,24 @@ class FactLine(BaseModel):
     source: str
 
 
+class ReviewItem(BaseModel):
+    author: str | None = None
+    rating: float | None = None
+    content: str
+
+
 class FactCard(BaseModel):
     title: str
     lines: list[FactLine] = Field(default_factory=list)
     missing: list[str] = Field(default_factory=list)
+    productidweb: str | None = None
+    image_url: str | None = None
+    product_link: str | None = None
+    stock_status: str | None = None      # "Còn hàng" / "Hết hàng" (cào từ dienmayxanh.com)
+    rating: float | None = None          # điểm đánh giá trung bình
+    review_count: int | None = None      # số lượt đánh giá
+    installment: str | None = None       # thông tin trả góp
+    reviews: list[ReviewItem] = Field(default_factory=list)
 
 
 class ComparisonCell(BaseModel):

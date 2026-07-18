@@ -67,10 +67,27 @@ def build_full_fact_card(product: Product) -> FactCard:
     lines: list[FactLine] = []
     missing: list[str] = []
 
+    # Extract productidweb
+    productidweb = product.productidweb
+    if not productidweb and product.raw:
+        raw_id = product.raw.get("productidweb")
+        if raw_id is not None:
+            s_val = str(raw_id).strip()
+            if s_val.endswith('.0'):
+                s_val = s_val[:-2]
+            if s_val.lower() not in ('nan', 'none', 'null', ''):
+                productidweb = s_val
+
+    # Fetch image and link from crawler
+    product_link, image_url = None, None
+    if productidweb:
+        from app.advice.crawler import fetch_product_info
+        product_link, image_url = fetch_product_info(productidweb)
+
     if product.price.available:
         detail = product.price.provenance.detail if product.price.provenance else None
         lines.append(FactLine(label="Giá", value=format_vnd(int(product.price.value)),
-                              source="catalog" + (f" ({detail})" if detail else "")))
+                               source="catalog" + (f" ({detail})" if detail else "")))
     else:
         missing.append("giá")
     lines.append(FactLine(label="Thương hiệu", value=product.brand, source="catalog"))
@@ -85,10 +102,14 @@ def build_full_fact_card(product: Product) -> FactCard:
 
     if product.promo_text:
         lines.append(FactLine(label="Khuyến mãi/quà kèm", value=product.promo_text,
-                              source="khuyến mãi (catalog)"))
+                               source="khuyến mãi (catalog)"))
 
     missing.extend(_ALWAYS_MISSING)
-    return FactCard(title=f"Thông tin chi tiết: {product.display_name}", lines=lines, missing=missing)
+    card = FactCard(title=f"Thông tin chi tiết: {product.display_name}", lines=lines, missing=missing,
+                    productidweb=productidweb, image_url=image_url, product_link=product_link)
+    from app.advice.crawler import enrich_card_with_detail
+    enrich_card_with_detail(card)
+    return card
 
 
 _DETAIL_SYSTEM = (

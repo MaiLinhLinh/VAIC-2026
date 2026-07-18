@@ -58,6 +58,16 @@ def normalize_row(row: dict, cfg: CategoryConfig) -> Product:
     doc_parts = [_text(row.get(f)) for f in cfg.spec_doc_fields]
     spec_doc = " | ".join(p for p in doc_parts if p)
     price, orig, sale = resolve_price(row.get("giá gốc"), row.get("giá khuyến mãi"))
+    
+    productidweb_val = row.get("productidweb")
+    productidweb = None
+    if productidweb_val is not None and not _is_nan(productidweb_val):
+        s_val = str(productidweb_val).strip()
+        if s_val.endswith('.0'):
+            s_val = s_val[:-2]
+        if s_val.lower() not in ('nan', 'none', 'null', ''):
+            productidweb = s_val
+
     return Product(
         category=cfg.display, category_code=cfg.code,
         model_code=str(row.get("model_code")), sku=str(row.get("sku")),
@@ -65,6 +75,7 @@ def normalize_row(row: dict, cfg: CategoryConfig) -> Product:
         price=price, original_price=orig, sale_price=sale,
         specs=specs, spec_doc=spec_doc,
         promo_text=_text(row.get("khuyến mãi quà")),
+        productidweb=productidweb,
         raw={k: (None if _is_nan(v) else v) for k, v in row.items()},
     )
 
