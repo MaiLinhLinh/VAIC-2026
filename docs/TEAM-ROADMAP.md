@@ -107,8 +107,10 @@ Người dùng cuối
 - **Chạy `eval/run_eval.py` với LLM thật** → lấy số KPI (category_acc, hallucination_rate) cho bài nộp.
 - **Deploy live URL** (backend + build frontend) cho demo; hoàn tất polish UI.
 
+**Đã xong (18/07/2026):**
+- ✅ **Streaming** câu trả lời: SSE `POST /api/chat/stream` — sự kiện `status` theo tiến trình pipeline + **stream từng dòng ngay khi LLM viết xong dòng đó** (`stream:true`, mỗi dòng kiểm chứng grounding TRƯỚC khi phát — `app/advice/streaming.py`; dòng dính số bịa → dừng phát fail-closed, `done` thay bằng bản an toàn). FE tự fallback về `/api/chat` khi không kết nối được stream. Chi tiết: `frontend/README.md`.
+
 **Hướng phát triển:**
-- **Streaming** câu trả lời (endpoint hỗ trợ `stream:true`), giảm độ trễ cảm nhận.
 - Auth/multi-user, lưu **lịch sử hội thoại**, observability/logging (mask PII), dashboard admin.
 - **Đổi LLM sang model on-prem** (Qwen/vLLM) — chỉ cần lớp `LLMClient`.
 - CI/CD, Docker, responsive/mobile, tối ưu bundle.

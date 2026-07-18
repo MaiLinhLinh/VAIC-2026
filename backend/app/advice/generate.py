@@ -20,17 +20,23 @@ def _empty_message() -> str:
             "Anh/chị có thể nới ngân sách hoặc bớt một ràng buộc để em tìm lại nhé?")
 
 
-def generate_advice(reco: Recommendation, profile: NeedProfile, llm: LLMClient) -> AdviceResult:
-    if not reco.top3:
-        return AdviceResult(message=_empty_message(), cards=[], assumptions=reco.assumptions, warnings=[])
-
-    cards = [build_fact_card(sp, profile) for sp in reco.top3]
+def advice_prompt(reco: Recommendation, profile: NeedProfile, cards: list) -> tuple[str, str]:
+    # Shared by the blocking path (generate_advice) and the streaming path (streaming.py).
     facts = facts_for_llm(cards)
     excluded_txt = f"\nNhóm không đề xuất: {reco.excluded.label} — {reco.excluded.reason}" if reco.excluded else ""
     prefs_txt = ", ".join(profile.prefs) or "không nêu rõ"
     user = (f"Nhu cầu khách: ưu tiên {prefs_txt}.\n\nFACTS:\n{facts}{excluded_txt}\n\n"
             "Viết lời tư vấn theo đúng quy tắc.")
-    message = llm.complete_text(ADVICE_SYSTEM_PROMPT, user)
+    return ADVICE_SYSTEM_PROMPT, user
+
+
+def generate_advice(reco: Recommendation, profile: NeedProfile, llm: LLMClient) -> AdviceResult:
+    if not reco.top3:
+        return AdviceResult(message=_empty_message(), cards=[], assumptions=reco.assumptions, warnings=[])
+
+    cards = [build_fact_card(sp, profile) for sp in reco.top3]
+    system, user = advice_prompt(reco, profile, cards)
+    message = llm.complete_text(system, user)
     comparison = build_comparison(reco.top3, profile)
     return AdviceResult(message=message, cards=cards, assumptions=reco.assumptions,
                         warnings=[], comparison=comparison)

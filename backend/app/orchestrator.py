@@ -1,4 +1,5 @@
 from __future__ import annotations
+from typing import Callable, Optional
 from pydantic import BaseModel, Field
 from app.schemas import NeedProfile, AdviceResult, Product
 from app.llm.client import LLMClient
@@ -8,6 +9,7 @@ from app.nlu.preprocess import strip_accents, detect_category
 from app.dialogue.clarify import next_question, should_recommend, assumptions_for
 from app.retrieval.engine import RetrievalEngine
 from app.advice.generate import generate_advice
+from app.advice.streaming import stream_advice
 from app.advice.verify import verify_advice, is_grounded
 from app.advice.provenance import build_fact_card
 from app.advice.compare import build_comparison
@@ -68,18 +70,28 @@ class Orchestrator:
         self.llm = llm
         self.engine = RetrievalEngine(store)
 
-    def handle_turn(self, state: ChatState, message: str):
+    def handle_turn(self, state: ChatState, message: str,
+                    on_status: Optional[Callable[[str], None]] = None,
+                    on_delta: Optional[Callable[[str], None]] = None):
+        # on_status: optional hook so streaming endpoints can surface pipeline progress.
+        # on_delta: optional hook — when set, verified advice lines are emitted live
+        # as the LLM generates them (see app/advice/streaming.py).
+        def notify(text: str) -> None:
+            if on_status:
+                on_status(text)
+
         if state.stage == "recommended":
             # a) Nâng/hạ ngân sách
             if state.last_top_price:
                 direction = _budget_direction(message)
                 if direction is not None:
                     return self._budget_turn(state, direction)
-            # b) Hỏi kỹ về MỘT sản phẩm cụ thể trong danh sách vừa đề xuất
+            # b) Hỏi kỹ về MỘT sản phẩm cụ thể trong danh sách vừa đề xuất (deep-dive)
             detail = self._detail_turn(state, message)
             if detail is not None:
                 return detail
 
+        notify("Em đang đọc yêu cầu của anh/chị…")
         state.profile = parse_need(message, self.llm, prior=state.profile)
 
         if state.profile.category is None:
@@ -97,8 +109,13 @@ class Orchestrator:
             for a in assumptions_for(state.profile, state.asked):
                 if a not in state.profile.assumptions:
                     state.profile.assumptions.append(a)
+            notify("Em đang tìm máy phù hợp trong catalog…")
             reco = self.engine.recommend(state.profile)
-            advice = verify_advice(generate_advice(reco, state.profile, self.llm))
+            notify("Em đang soạn lời tư vấn…")
+            if on_delta is not None:
+                advice, streamed = stream_advice(reco, state.profile, self.llm, on_delta)
+            else:
+                advice, streamed = verify_advice(generate_advice(reco, state.profile, self.llm)), False
             state.stage = "recommended"
             state.last_products = [s.product for s in reco.top3]
             state.focused_sku = None
@@ -106,7 +123,10 @@ class Orchestrator:
                                     if reco.top3 and reco.top3[0].product.price.available else None)
             reply = advice.message if is_grounded(advice) else _safe_summary(advice)
             if advice.assumptions:
-                reply += "\n\n(" + " ".join(advice.assumptions) + ")"
+                suffix = "\n\n(" + " ".join(advice.assumptions) + ")"
+                reply += suffix
+                if streamed:
+                    on_delta(suffix)  # keep live-emitted text identical to final reply
             return state, TurnResult(reply=reply, stage="recommended", advice=advice, need=state.profile)
 
         return state, TurnResult(reply="Dạ anh/chị cho em thêm chút thông tin nhé.",
