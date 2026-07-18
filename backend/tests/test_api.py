@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
-from app.main import app, get_orchestrator
-from app.orchestrator import Orchestrator
+from app.main import app, get_engine
+from app.agent_core.engine import OrchestratorEngine
 from app.catalog.loader import ProductStore
 from app.llm.client import FakeLLM
 from app.schemas import Product, SourcedValue
@@ -18,12 +18,12 @@ def _store():
     return ProductStore([mk("A", 12_000_000), mk("B", 11_000_000)])
 
 
-def _fake_orch():
+def _fake_engine():
     llm = FakeLLM(json_responses=[{"category": "tu_lanh", "budget_max": 20000000,
                                    "constraints": {"số người": [3, 4]}, "prefs": ["tiết kiệm điện"],
                                    "known": ["category", "budget_max", "constraints", "prefs"]}],
                   text_responses=["Em gợi ý máy giá 12.000.000đ và 11.000.000đ."])
-    return Orchestrator(_store(), llm)
+    return OrchestratorEngine(_store(), llm)
 
 
 def test_health():
@@ -33,7 +33,7 @@ def test_health():
 
 
 def test_chat_recommends():
-    app.dependency_overrides[get_orchestrator] = _fake_orch
+    app.dependency_overrides[get_engine] = _fake_engine
     client = TestClient(app)
     r = client.post("/api/chat", json={"session_id": "s1", "message": "nha 4 nguoi mua tu lanh 20tr tiet kiem dien"})
     body = r.json()
@@ -54,7 +54,7 @@ def _parse_sse(text):
 
 
 def test_chat_stream_events():
-    app.dependency_overrides[get_orchestrator] = _fake_orch
+    app.dependency_overrides[get_engine] = _fake_engine
     client = TestClient(app)
     r = client.post("/api/chat/stream",
                     json={"session_id": "s2", "message": "nha 4 nguoi mua tu lanh 20tr tiet kiem dien"})
