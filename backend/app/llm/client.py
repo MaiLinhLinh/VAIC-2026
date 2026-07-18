@@ -1,7 +1,7 @@
 from __future__ import annotations
 import json
 import re
-from typing import Protocol
+from typing import Iterator, Protocol
 import httpx
 from app.config import get_settings
 
@@ -9,6 +9,7 @@ from app.config import get_settings
 class LLMClient(Protocol):
     def complete_json(self, system: str, user: str, schema_hint: str = "") -> dict: ...
     def complete_text(self, system: str, user: str) -> str: ...
+    def stream_text(self, system: str, user: str) -> Iterator[str]: ...
 
 
 class DeepSeekClient:
@@ -60,6 +61,31 @@ class DeepSeekClient:
         return self._post(
             [{"role": "system", "content": system}, {"role": "user", "content": user}])
 
+    def stream_text(self, system: str, user: str) -> Iterator[str]:
+        # SSE stream (stream:true). Yields only `content` tokens — reasoning models
+        # also emit `reasoning_content` deltas, which we intentionally skip.
+        payload = {"model": self.model,
+                   "messages": [{"role": "system", "content": system},
+                                {"role": "user", "content": user}],
+                   "temperature": 0.2, "max_tokens": self.max_tokens, "stream": True}
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        with httpx.Client(timeout=self.timeout) as c:
+            with c.stream("POST", f"{self.base_url}/chat/completions",
+                          json=payload, headers=headers) as r:
+                r.raise_for_status()
+                for line in r.iter_lines():
+                    if not line.startswith("data: "):
+                        continue
+                    data = line[len("data: "):].strip()
+                    if data == "[DONE]":
+                        break
+                    choices = json.loads(data).get("choices") or []
+                    if not choices:
+                        continue
+                    token = (choices[0].get("delta") or {}).get("content")
+                    if token:
+                        yield token
+
 
 class FakeLLM:
     def __init__(self, json_responses: list[dict] | None = None, text_responses: list[str] | None = None):
@@ -74,6 +100,12 @@ class FakeLLM:
     def complete_text(self, system: str, user: str) -> str:
         self.calls.append((system, user))
         return self._text.pop(0) if self._text else ""
+
+    def stream_text(self, system: str, user: str) -> Iterator[str]:
+        # Yields the canned text in small slices to exercise line-buffering in callers.
+        text = self.complete_text(system, user)
+        for i in range(0, len(text), 10):
+            yield text[i:i + 10]
 
 
 def get_llm() -> LLMClient:
