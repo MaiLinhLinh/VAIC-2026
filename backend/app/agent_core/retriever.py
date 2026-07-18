@@ -83,6 +83,58 @@ def score_product(prod: Dict[str, Any], query: str, priority_features: Optional[
         
     return score
 
+def category_table_for(category: str, db_path: Optional[str] = None) -> Optional[str]:
+    """Tên bảng thông số riêng của một danh mục (vd 'Tủ Lạnh' -> 'tu_lanh')."""
+    conn = sqlite3.connect(_resolve_db(db_path))
+    try:
+        row = conn.execute("SELECT DISTINCT category_table FROM all_products WHERE category = ?",
+                           (category,)).fetchone()
+    finally:
+        conn.close()
+    return row[0] if row and row[0] else None
+
+
+def hydrate_rows(rows: List[Dict[str, Any]], db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Đổi kết quả tool SQL về dòng all_products chuẩn (có price_clean/full_specs_json cho
+    fact card), giữ nguyên thứ tự. Nối bằng cột id (duy nhất) khi có; model_code KHÔNG duy
+    nhất (biến thể chung mã) nên chỉ là đường lui khi truy từ bảng ngành."""
+    ids = [r.get("id") for r in rows if r.get("id") is not None]
+    codes = [str(r.get("model_code") or "").strip() for r in rows]
+    conn = sqlite3.connect(_resolve_db(db_path))
+    conn.row_factory = sqlite3.Row
+    try:
+        if ids:
+            marks = ",".join("?" * len(ids))
+            got = {r["id"]: dict(r) for r in conn.execute(
+                f"SELECT * FROM all_products WHERE id IN ({marks})", ids)}
+            ordered = [got[i] for i in ids if i in got]
+        else:
+            codes = [c for c in codes if c]
+            if not codes:
+                return []
+            marks = ",".join("?" * len(codes))
+            got = {}
+            for r in conn.execute(f"SELECT * FROM all_products WHERE model_code IN ({marks})", codes):
+                got.setdefault(str(r["model_code"]), dict(r))
+            seen: set = set()
+            ordered = []
+            for c in codes:
+                if c in got and c not in seen:
+                    ordered.append(got[c])
+                    seen.add(c)
+    finally:
+        conn.close()
+    out = []
+    for p in ordered:
+        p["_score"] = 0.0
+        p["name"] = (f"Model {p.get('model_code') or p.get('sku', 'N/A')} - {p.get('brand', '')}"
+                     if p.get("model_code") or p.get("sku")
+                     else str(p.get("key_specs_summary", "Sản phẩm")))
+        p["price"] = p.get("price_clean") or 0
+        out.append(p)
+    return out
+
+
 def price_spread_products(category: str, db_path: Optional[str] = None) -> Dict[str, Any]:
     """Khách từ chối chốt ngân sách -> chọn 3 đại diện rẻ / tầm trung / cao cấp của ngành
     (thay vì top theo điểm, để khách định hình mặt bằng giá)."""

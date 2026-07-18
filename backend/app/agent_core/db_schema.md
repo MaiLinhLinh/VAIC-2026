@@ -1,0 +1,617 @@
+# Schema CSDL products.db (SQLite) — SINH TỰ ĐỘNG bởi scripts/gen_db_schema_md.py
+
+## Quy tắc đọc (quan trọng)
+- `all_products`: 1 dòng = 1 sản phẩm (SKU), gộp mọi ngành. Cột `id` là khoá DUY NHẤT của dòng.
+- `model_code` KHÔNG duy nhất (nhiều biến thể chung một mã) — không dùng làm khoá nhận diện.
+- Giá bán (VND) là `price_clean`; giá trị 0/NULL nghĩa là CHƯA CÓ DỮ LIỆU giá, không phải miễn phí — muốn lọc/xếp theo giá phải kèm `price_clean > 0`.
+- Mỗi ngành có bảng thông số riêng (1 dòng = 1 sản phẩm), JOIN với all_products qua `model_code`.
+- Cột thông số là TEXT thường kèm đơn vị (vd '313 lít', '27 inch') — so sánh số bằng `CAST("tên cột" AS REAL)` (SQLite lấy phần số đứng đầu chuỗi).
+- Tên cột tiếng Việt/có khoảng trắng phải bọc trong nháy kép: `"Dung tích tổng"`.
+
+
+## Bảng all_products (mọi ngành) (8746 dòng)
+- "id" — vd: 1
+- "model_code" — vd: 165156
+- "sku" — vd: 1751097000147
+- "category" — vd: Tủ Lạnh
+- "category_table" — vd: tu_lanh
+- "brand" — vd: Samsung
+- "price_orig" — vd: 14990000.0
+- "price_promo" — vd: 10990000.0
+- "price_clean" — vd: 14990000.0
+- "gift_promo" — vd: Phiếu mua hàng Máy lọc không khí/Hút bụi trị giá 300,000đ áp
+- "key_specs_summary" — vd: Kiểu dáng: Ngăn đá dưới; Công nghệ làm lạnh: Công nghệ làm l
+- "full_specs_json" — vd: {"Kiểu dáng": "Ngăn đá dưới", "Công nghệ làm lạnh": "Công ng
+
+## Bảng "dong_ho_thong_minh" — ngành "Đồng hồ thông minh" (1336 dòng)
+- "model_code" — vd: 170498
+- "sku" — vd: 232391002022
+- "productidweb" — vd: 292695.0
+- "category_code" — vd: 49
+- "brand" — vd: Kidcare
+- "Cảm biến" — vd: Cảm biến trọng lực
+- "Định vị" — vd: Beidou | GPS
+- "Môn thể thao" — vd: Chạy bộ
+- "SIM" — vd: Nano SIM
+- "Thực hiện cuộc gọi" — vd: Nghe gọi độc lập
+- "Tiện ích" — vd: Cài đặt nhanh các chế độ với 1 nút nhấn | Vi xử lý tối ưu E-
+- "Chuẩn chống nước, bụi" — vd: Kháng nước IPX8 (Rửa tay, đi mưa)
+- "Theo dõi sức khoẻ" — vd: Tính quãng đường chạy | Chế độ luyện tập | Đếm số bước chân
+- "Tiện ích khác" — vd: Đồng hồ bấm giờ | Báo thức | Thay mặt đồng hồ | Trò chơi | K
+- "Hiển thị thông báo" — vd: Tin nhắn | Cuộc gọi
+- "Thời gian sử dụng" — vd: Khoảng 4 ngày
+- "Thời gian sạc" — vd: Khoảng 3.5 giờ, chỉ dùng củ sạc 5V-1A
+- "Dung lượng pin" — vd: 1000 mAh
+- "Cổng sạc" — vd: Dây sạc nam châm
+- "Sản xuất tại" — vd: Trung Quốc
+- "Thời gian ra mắt" — vd: 10/2022
+- "Ngôn ngữ" — vd: Tiếng Việt | Tiếng Anh
+- "Màn hình hiển thị" — vd: TFT
+- "Kích thước màn hình" — vd: 1.3 inch
+- "Độ phân giải" — vd: 240 x 240 pixels
+- "Kích thước mặt" — vd: 43.4 mm
+- "Chất liệu mặt" — vd: Kính cường lực
+- "Chất liệu khung viền" — vd: Nhựa
+- "Chất liệu dây" — vd: Silicone
+- "Độ rộng dây" — vd: 2 cm
+- "Chu vi cổ tay" — vd: 16 - 25 cm
+- "Thay thế" — vd: Có
+- "Dài" — vd: 43
+- "Ngang" — vd: 43
+- "Dày" — vd: 9
+- "Khối lượng máy" — vd: 58
+- "Thiết kế" — vd: Không
+- "Độ phân giải camera trước" — vd: 2 camera 2 MP
+- "Chip xử lý (CPU)" — vd: SL8521ET
+- "Bộ nhớ" — vd: 512 MB
+- "Hệ điều hành" — vd: XunOS
+- "Tương thích" — vd: iOS 10 trở lên | Android 4.3 trở lên
+- "Ứng dụng" — vd: Mibro
+- "Kết nối" — vd: Wifi | LBS | AGPS | Định vị bằng thuật toán AI | Định vị tro
+- "Đường kính" — vd: Không
+- "giá gốc" — vd: 1390000.0
+- "giá khuyến mãi" — vd: 1290000.0
+- "khuyến mãi quà" — vd: Huy hiệu cài balo cho bé - Kidcare | Phiếu mua Bảng vẽ Kidca
+- "price_promo_clean" — vd: 1290000.0
+- "capacity_clean"
+
+## Bảng "man_hinh_may_tinh" — ngành "Màn hình máy tính" (469 dòng)
+- "model_code" — vd: 171806
+- "sku" — vd: 3641273000417
+- "productidweb" — vd: 335630
+- "category_code" — vd: 73
+- "brand" — vd: Gigabyte
+- "Tiện ích" — vd: Gập màn hình lên xuống
+- "Màn hình hiển thị" — vd: Freesync | Giảm ánh sáng xanh
+- "Kích thước màn hình" — vd: 27 inch
+- "Độ phân giải" — vd: Full HD (1920 x 1080)
+- "Ngang" — vd: 619.0
+- "Dày" — vd: 172
+- "Khối lượng máy" — vd: 5
+- "Kết nối" — vd: 2 x HDMI 2.0 | 1 x DisplayPort 1.4 | 1 x Earphone Jack
+- "Màn hình cảm ứng" — vd: Không cảm ứng
+- "Tấm nền" — vd: IPS
+- "Thời gian đáp ứng" — vd: 1 ms (MPRT)
+- "Độ phủ màu" — vd: 105% sRGB
+- "Số lượng" — vd: 16.7 triệu màu
+- "Độ sáng" — vd: 300 cd/m2
+- "Độ tương phản tĩnh" — vd: 1000:1
+- "Loa" — vd: Không có
+- "Vesa" — vd: Có
+- "Điện năng tiêu thụ" — vd: 23W
+- "Cao" — vd: 447
+- "Ngang module phụ" — vd: 619
+- "Cao không chân" — vd: 365
+- "Độ dày không chân" — vd: 50
+- "Loại màn hình" — vd: Phẳng
+- "giá gốc" — vd: 3490000.0
+- "giá khuyến mãi" — vd: 4890000.0
+- "khuyến mãi quà" — vd: Phiếu mua hàng Giá treo màn hình (Giá trị từ 500,000đ) trị g
+- "price_promo_clean" — vd: 4890000.0
+- "capacity_clean"
+
+## Bảng "may_giat" — ngành "Máy giặt" (1337 dòng)
+- "model_code" — vd: 178557
+- "sku" — vd: 3053659000014
+- "productidweb" — vd: 202526
+- "category_code" — vd: 115
+- "brand_id" — vd: 315.0
+- "brand" — vd: Electrolux
+- "Sản xuất tại" — vd: Việt Nam
+- "Thời gian ra mắt" — vd: 2014
+- "Điện năng tiêu thụ" — vd: 34.7 Wh/kg
+- "Chất liệu thân vỏ" — vd: Kim loại sơn tĩnh điện
+- "Số người sử dụng" — vd: Từ 3 - 5 người (8 - 9 kg)
+- "Tiện ích" — vd: Khử mùi kháng khuẩn | Tự khởi động lại khi có điện | Khóa tr
+- "Cao" — vd: 51.7
+- "Ngang" — vd: 59
+- "Sâu" — vd: 62
+- "Khối lượng máy" — vd: 6,3
+- "Số lượng" — vd: Không
+- "Loại Inverter" — vd: Không có
+- "Bảo hành động cơ" — vd: 5 năm
+- "Loại sản phẩm" — vd: Cửa trên
+- "Bảng điều khiển" — vd: Tiếng Việt nút nhấn
+- "Chất liệu mặt" — vd: Nhựa
+- "Lồng giặt" — vd: Lồng đứng
+- "Khối lượng tải chính" — vd: 9 Kg
+- "Công nghệ" — vd: Giặt sóng siêu âm | Diệt khuẩn khử mùi Nano Ag+ | Giặt nhiều
+- "Chất liệu ruột" — vd: Thép không gỉ
+- "Tốc độ quay vắt tối đa" — vd: 750 vòng/phút
+- "Động cơ" — vd: Truyền động gián tiếp (dây Curoa)
+- "Công nghệ sấy" — vd: Không có
+- "Chương trình" — vd: Đồ cotton | Đồ thể thao | Xả | Giặt nhanh | Giặt tiết kiệm C
+- "Dài ống cấp nước" — vd: 150
+- "Dài ống xả nước" — vd: 160
+- "giá gốc" — vd: 18640000.0
+- "giá khuyến mãi" — vd: 13190000.0
+- "khuyến mãi quà" — vd: Cơ hội trúng tủ chăm sóc quần áo trị giá 58 triệu đồng. (Xem
+- "price_promo_clean" — vd: 13190000.0
+- "capacity_clean" — vd: 9.0
+
+## Bảng "may_in" — ngành "Máy in" (147 dòng)
+- "model_code" — vd: 172217
+- "sku" — vd: 3641131000109
+- "productidweb" — vd: 357980
+- "category_code" — vd: 75
+- "brand" — vd: Hp
+- "Sản xuất tại" — vd: Thái Lan
+- "Thời gian ra mắt" — vd: 2024.0
+- "Màn hình hiển thị" — vd: LCD 2 dòng
+- "Dài" — vd: 427
+- "Khối lượng máy" — vd: 7
+- "Bộ nhớ" — vd: 256 MB
+- "Tương thích" — vd: macOS 14 | macOS Catalina (10.15) | macOS Mojave (10.14) | m
+- "Kết nối" — vd: Wi-Fi Direct | Wifi
+- "Phụ kiện đi kèm" — vd: Khoảng 6000 trang (Trắng đen) - 8000 trang (Màu)
+- "Cổng kết nối" — vd: USB 2.0 | LAN
+- "Rộng" — vd: 364
+- "Cao" — vd: 240
+- "Chất lượng in (độ nét)" — vd: 1200 x 1200 dpi (In trắng đen) - 4800 x 1200 dpi (In màu)
+- "Thời gian chu kỳ" — vd: 14 giây (Đen trắng) - 16 giây (Màu)
+- "Tốc độ in" — vd: 23 trang/phút (Đen trắng) - 22 trang/phút (Màu) (In nháp) | 
+- "Công suất theo nghiệp vụ" — vd: 400-800 trang/tháng
+- "Loại mực in" — vd: HP GT53 1VV22AA Đen | HP GT52 M0H54AA Xanh dương | HP GT52 M
+- "Công nghệ" — vd: Wi-Fi Direct | HP Smart App | Apple AirPrint
+- "Kích thước phụ kiện" — vd: A4 | A6 | DL | C6 | B5 (JIS) | Thẻ Hagaki | Chou #3 | c5 | T
+- "Loại giấy in" — vd: Giấy trơn | Giấy thuyết trình mờ HP | Giấy in phun bóng khác
+- "Khay chứa giấy đã in" — vd: 100 tờ
+- "Khay nạp giấy" — vd: 250 tờ
+- "Khổ giấy" — vd: Không
+- "CPU tương thích" — vd: AMD | ARM 64 | Intel
+- "Công suất đầu ra" — vd: Hãng không công bố
+- "Loại sản phẩm" — vd: In phun màu
+- "Loại giấy in 2 mặt" — vd: Không
+- "giá gốc" — vd: 8190000.0
+- "giá khuyến mãi" — vd: 4590000.0
+- "khuyến mãi quà" — vd: Phiếu mua hàng giảm 10% tối đa 300,000đ mua đèn năng lượng m
+- "price_promo_clean" — vd: 4590000.0
+- "capacity_clean"
+
+## Bảng "may_lanh" — ngành "Máy lạnh" (1039 dòng)
+- "model_code" — vd: 180706
+- "sku" — vd: 1751098000210
+- "productidweb" — vd: 362465
+- "category_code" — vd: 36
+- "brand_id" — vd: 7
+- "brand" — vd: Panasonic
+- "Công nghệ làm lạnh" — vd: Powerful
+- "Sản xuất tại" — vd: Malaysia
+- "Điện năng tiêu thụ" — vd: 1
+- "Công nghệ tiết kiệm điện" — vd: Inverter | ECO tích hợp A.I
+- "Tiện ích" — vd: Nắp dàn lạnh có thể tháo rời, dễ dàng vệ sinh | Hẹn giờ bật,
+- "Khối lượng máy" — vd: 19.0
+- "Bảo hành bộ phận" — vd: 1 năm
+- "Loại máy" — vd: Máy lạnh 1 chiều (chỉ làm lạnh)
+- "Công suất đầu ra" — vd: Không
+- "Nhãn năng lượng" — vd: 5 sao (Hiệu suất năng lượng 6.23)
+- "Dài ống đồng" — vd: Tối thiểu 3m - Tối đa 30m
+- "Cao lắp đặt" — vd: 20m
+- "Chất liệu dàn tản nhiệt" — vd: Ống dẫn gas bằng Đồng - Lá tản nhiệt bằng Nhôm phủ BlueFin
+- "Độ ồn" — vd: Dàn lạnh: 45/34/29 dB - Dàn nóng: 51 dB
+- "Dòng điện vào" — vd: Dàn nóng hoặc dàn lạnh
+- "Kích thước ống đồng" — vd: 6/12
+- "Số lượng" — vd: Khoảng 7000 trang A4
+- "Dài phụ kiện chính" — vd: 106
+- "Độ dày phụ kiện chính" — vd: 24
+- "Khối lượng phụ kiện chính" — vd: 12
+- "Cao phụ kiện phụ" — vd: 61
+- "Dài phụ kiện phụ" — vd: 82
+- "Độ dày phụ kiện phụ" — vd: 29
+- "Khối lượng phụ kiện phụ" — vd: 33
+- "Dòng điện hoạt động" — vd: 1 pha
+- "Chuẩn chống nước, bụi" — vd: Nanoe-G lọc bụi mịn PM2.5
+- "Loại Inverter" — vd: Máy lạnh Inverter
+- "Chế độ gió" — vd: Đảo gió lên xuống trái phải tự động
+- "Dòng sản phẩm" — vd: 2026
+- "Phạm vi sử dụng" — vd: Từ 30 - 40m² (từ 80 đến 120m³)
+- "Loại Gas" — vd: R-32
+- "Bảo hành động cơ" — vd: Máy nén 12 năm
+- "Cao phụ kiện chính" — vd: 29
+- "Cao phụ kiện chính 2" — vd: Không
+- "Dài phụ kiện chính 2" — vd: 74.0
+- "Độ dày phụ kiện chính 2" — vd: 27.0
+- "giá gốc" — vd: 29490000.0
+- "giá khuyến mãi" — vd: 16790000.0
+- "khuyến mãi quà" — vd: Phiếu mua hàng Máy lọc không khí/Hút bụi trị giá 300,000đ áp
+- "price_promo_clean" — vd: 16790000.0
+- "capacity_clean"
+
+## Bảng "may_nuoc_nong" — ngành "Máy nước nóng" (319 dòng)
+- "model_code" — vd: 165107
+- "sku" — vd: 1750911000099
+- "productidweb" — vd: 344397
+- "category_code" — vd: 41
+- "brand_id" — vd: 355.0
+- "brand" — vd: Stiebel Eltron
+- "Sản xuất tại" — vd: Thái Lan
+- "Chất liệu thân vỏ" — vd: Đang cập nhật
+- "Tiện ích" — vd: Thanh nhiệt bằng đồng làm nóng nhanh, bền bỉ | Van điều chỉn
+- "Cao" — vd: 34.0
+- "Khối lượng máy" — vd: 2
+- "Loại máy" — vd: Làm nóng trực tiếp
+- "Công suất đầu ra" — vd: 4500W
+- "Số lượng" — vd: Không
+- "Dòng sản phẩm" — vd: 2025
+- "Chất liệu ruột" — vd: Không
+- "Thương hiệu của" — vd: Đức
+- "Tính năng an toàn" — vd: Công tắc dòng chảy | Cầu dao chống rò điện ELCB | Bộ ổn định
+- "Tùy chỉnh nhiệt độ" — vd: Chỉnh nhiệt độ vô cấp
+- "Áp lực nước hoạt động" — vd: Tối thiểu 0.015 Mpa - Tối đa 0.5 Mpa
+- "Thời gian sử dụng" — vd: Nóng liền
+- "Nhiệt độ làm nóng tối đa" — vd: Khoảng 55°C
+- "Loại tấm thu nhiệt" — vd: Không
+- "Thời gian giữ nhiệt" — vd: Không
+- "Dài ống" — vd: Không
+- "Chất liệu khung viền" — vd: Không
+- "Chất liệu vòi sen" — vd: Nhựa ABS mạ Chrome
+- "Chất liệu giá đỡ vòi sen" — vd: Nhựa ABS cao cấp
+- "Vòi sen" — vd: Có kèm theo vòi sen 5 chế độ phun
+- "Rộng" — vd: 21
+- "Dài" — vd: Không
+- "Dày" — vd: 7
+- "Lớp cách nhiệt" — vd: Không
+- "Bơm trợ lực" — vd: Có
+- "Dung lượng dung tích" — vd: Không có bình chứa
+- "giá gốc" — vd: 4790000.0
+- "giá khuyến mãi" — vd: 3917455.0
+- "khuyến mãi quà" — vd: Phiếu mua hàng giảm 10% tối đa 300,000đ mua đèn năng lượng m
+- "price_promo_clean" — vd: 3917455.0
+- "capacity_clean"
+
+## Bảng "may_rua_chen" — ngành "Máy rửa chén" (134 dòng)
+- "model_code" — vd: 180722
+- "sku" — vd: 1753859000025
+- "productidweb" — vd: 362957
+- "category_code" — vd: 39
+- "brand_id" — vd: 133
+- "brand" — vd: Bosch
+- "Sản xuất tại" — vd: Ba Lan
+- "Chất liệu thân vỏ" — vd: Thép không gỉ
+- "Tiện ích" — vd: Điều khiển bằng điện thoại thông qua ứng dụng Home Connect |
+- "Cao" — vd: 84.0
+- "Ngang" — vd: 60.0
+- "Sâu" — vd: 60.0
+- "Khối lượng máy" — vd: 53.0
+- "Công suất đầu ra" — vd: 2400W
+- "Độ ồn" — vd: 46 dB
+- "Số lượng" — vd: 4 - 5 bữa ăn Việt (13 bộ châu Âu)
+- "Dòng sản phẩm" — vd: 2025
+- "Loại sản phẩm" — vd: Máy rửa chén độc lập
+- "Bảng điều khiển" — vd: Nút nhấn
+- "Công nghệ" — vd: Công nghệ rửa diệt khuẩn Hygiene Plus | Hỗ trợ hòa tan viên 
+- "Công nghệ sấy" — vd: Heat Exchanger + Drying assist (nhiệt có sẵn + sấy hỗ trợ - 
+- "Chương trình" — vd: Rửa chuyên sâu | Ghi nhớ chương trình (chương trình yêu thíc
+- "Dài ống cấp nước" — vd: 165
+- "Dài ống xả nước" — vd: 190
+- "Tiêu thụ nước" — vd: 4 ~ 14 lít/lần rửa
+- "Chất liệu cửa" — vd: Thép không gỉ
+- "Khay chén" — vd: Khung xương khay dưới có thể gập xuống | Khay trên có thể th
+- "giá gốc" — vd: 19990000.0
+- "giá khuyến mãi" — vd: 14990000.0
+- "khuyến mãi quà" — vd: Cơ hội trúng tủ chăm sóc quần áo trị giá 58 triệu đồng. (Xem
+- "price_promo_clean" — vd: 14990000.0
+- "capacity_clean"
+
+## Bảng "may_say_quan_ao" — ngành "Máy sấy quần áo" (107 dòng)
+- "model_code" — vd: 180190
+- "sku" — vd: 4844743000039
+- "productidweb" — vd: 99999
+- "category_code" — vd: 116
+- "brand_id" — vd: 201
+- "brand" — vd: Lumias
+- "Sản xuất tại" — vd: Trung Quốc
+- "Điện năng tiêu thụ" — vd: 800W
+- "Chất liệu thân vỏ" — vd: Kim loại phủ sơn (PCM)
+- "Số người sử dụng" — vd: Từ 1 - 2 người (Dưới 4 kg)
+- "Công nghệ tiết kiệm điện" — vd: Không có
+- "Tiện ích" — vd: Khử trùng bằng tia cực tím | Kiểm soát nhiệt độ với 2 luồng 
+- "Cao" — vd: 48
+- "Ngang" — vd: 40
+- "Sâu" — vd: 56
+- "Khối lượng máy" — vd: 14
+- "Dòng sản phẩm" — vd: 2025.0
+- "Loại sản phẩm" — vd: Sấy thông hơi
+- "Bảng điều khiển" — vd: Nút bấm
+- "Khối lượng tải chính" — vd: 4
+- "Công nghệ" — vd: Steam Refresh sấy hơi nước làm mới quần áo | Công nghệ Aller
+- "Chất liệu ruột" — vd: Thép không gỉ
+- "Động cơ" — vd: Hãng không công bố
+- "Dài ống xả nước" — vd: Không
+- "Nhiệt độ tối đa" — vd: 60°C
+- "Dài ống thoát khí" — vd: 13
+- "Chất liệu cửa" — vd: Kính chịu lực
+- "Cảm biến" — vd: Có
+- "giá gốc" — vd: 5990000.0
+- "giá khuyến mãi" — vd: 5990000.0
+- "khuyến mãi quà" — vd: Cơ hội trúng tủ chăm sóc quần áo trị giá 58 triệu đồng. (Xem
+- "price_promo_clean" — vd: 5990000.0
+- "capacity_clean" — vd: 4.0
+
+## Bảng "may_tinh_bang" — ngành "Máy tính bảng" (1469 dòng)
+- "model_code" — vd: 172174
+- "sku" — vd: 2440931001115
+- "productidweb" — vd: 345544
+- "category_code" — vd: 30
+- "brand" — vd: Honor
+- "SIM" — vd: Không có
+- "Thực hiện cuộc gọi" — vd: Không có
+- "Chuẩn chống nước, bụi" — vd: Không
+- "Dung lượng pin" — vd: 7020
+- "Cổng sạc" — vd: Type-C
+- "Thời gian ra mắt" — vd: 09/2025
+- "Màn hình hiển thị" — vd: IPS LCD
+- "Kích thước màn hình" — vd: 8.7"
+- "Độ phân giải" — vd: 1200 x 1920 Pixels
+- "Dài" — vd: 211.0
+- "Ngang" — vd: 124.0
+- "Dày" — vd: 7
+- "Khối lượng máy" — vd: 365
+- "Chip xử lý (CPU)" — vd: Snapdragon 680 8 nhân
+- "Hệ điều hành" — vd: Android 15
+- "Kết nối" — vd: OTG
+- "Chất liệu thân vỏ" — vd: Kim loại nguyên khối
+- "Phụ kiện đi kèm" — vd: 10 W
+- "Wifi" — vd: Dual-band | Wi-Fi 5
+- "Thẻ nhớ" — vd: Không có
+- "Tốc độ CPU" — vd: 4 nhân 2.4 GHz & 4 nhân 1.9 GHz
+- "RAM" — vd: 4 GB
+- "Chip đồ họa (GPU)" — vd: Adreno 610
+- "Bluetooth" — vd: v5.0
+- "Cổng tai nghe, headphone" — vd: Type-C
+- "Tính năng đặc biệt" — vd: Mở khóa bằng khuôn mặt | Khoanh tròn để tìm kiếm với Google 
+- "Ghi âm" — vd: Có
+- "Radio" — vd: Không có
+- "Loại pin" — vd: Li-Ion
+- "Công nghệ pin" — vd: Tiết kiệm pin
+- "Hỗ trợ sạc tối đa" — vd: 18 W
+- "Dung lượng lưu trữ" — vd: 64 GB
+- "Dung lượng khả dụng" — vd: 49
+- "Quay phim" — vd: FullHD 1080p@30fps
+- "Tính năng camera sau" — vd: Xóa phông | Tự động lấy nét | Đèn Flash
+- "Tính năng camera trước" — vd: Xóa phông
+- "Mạng di động" — vd: Không có
+- "GPS" — vd: A-GPS | GALILEO | GLONASS | GPS | BDS
+- "giá gốc" — vd: 3290000.0
+- "giá khuyến mãi" — vd: 2740000.0
+- "khuyến mãi quà" — vd: Phiếu mua hàng giảm 10% tối đa 300,000đ mua đèn năng lượng m
+- "price_promo_clean" — vd: 2740000.0
+- "capacity_clean"
+
+## Bảng "may_tinh_de_ban" — ngành "Máy tính để bàn" (405 dòng)
+- "model_code" — vd: 172208
+- "sku" — vd: 3643563000432
+- "productidweb" — vd: 357648
+- "category_code" — vd: 72
+- "brand" — vd: Singpc
+- "Thời gian ra mắt" — vd: 2025.0
+- "Màn hình hiển thị" — vd: Không có
+- "Kích thước màn hình" — vd: Không có
+- "Độ phân giải" — vd: Không có
+- "Dài" — vd: 135
+- "Dày" — vd: 40
+- "Khối lượng máy" — vd: 1
+- "Bộ nhớ" — vd: Không
+- "Hệ điều hành" — vd: Windows 11 Pro
+- "Hỗ trợ mainboard" — vd: Không
+- "Chất liệu thân vỏ" — vd: Không
+- "Hỗ trợ ổ cứng tối đa" — vd: Không
+- "Phụ kiện đi kèm" — vd: Không
+- "Đèn LED" — vd: Không
+- "Tản nhiệt nước" — vd: Không
+- "Tản nhiệt CPU" — vd: Không
+- "Tốc độ (RPM)" — vd: Không
+- "Cổng kết nối" — vd: 1 x HDMI 2.0 | 2 x LAN (RJ45) | 1 x DisplayPort 1.4 | 2 x US
+- "Cổng giao tiếp" — vd: Không
+- "Wifi" — vd: Wi-Fi 6(802.11ax) | Bluetooth 5.2
+- "Thẻ nhớ" — vd: Không có
+- "Webcam" — vd: Không
+- "Tính năng khác" — vd: Không
+- "Ổ đĩa quang" — vd: Không
+- "Rộng" — vd: 125
+- "Nguồn điện" — vd: 95 W
+- "Công nghệ CPU" — vd: Không
+- "Loại CPU" — vd: 125U
+- "Tốc độ CPU" — vd: 1.30 GHz
+- "Tốc độ tối đa" — vd: 4.30 GHz
+- "Số nhân" — vd: 12 nhân - 14 luồng
+- "Bộ nhớ đệm" — vd: 12 MB
+- "Socket" — vd: Không
+- "Chipset" — vd: Không
+- "RAM" — vd: 16 GB
+- "Loại RAM" — vd: DDR5 2 khe (1 khe 16 GB + 1 khe trống)
+- "Số khe RAM" — vd: 2 khe
+- "Hỗ trợ RAM tối đa" — vd: 64 GB
+- "Tản nhiệt RAM" — vd: Không
+- "Ổ cứng" — vd: 512 GB SSD M.2 NVMe
+- "Chuẩn kết nối ổ cứng" — vd: Không
+- "Khe cắm mở rộng" — vd: 1 x Khe cắm M.2 SATA/NVMe hỗ trợ PCIe 3.0 (Tối đa 4 TB) | 1 
+- "Màn hình cảm ứng" — vd: Không
+- "Thiết kế card" — vd: Card đồ hoạ tích hợp
+- "Công nghệ âm thanh" — vd: Intel Smart Sound | Không
+- "Model Mainboard" — vd: Không
+- "Form Factor" — vd: Không
+- "Socket (mainboard)" — vd: Không
+- "Loại RAM mainboard" — vd: Không
+- "Số khe RAM mainboard" — vd: Không
+- "Tốc độ Bus RAM mainboard" — vd: 5000 Mhz
+- "Hỗ trợ RAM tối đa/mainboard" — vd: Không
+- "Hỗ trợ khe cắm SSD M.2/HDD" — vd: Không
+- "Số khe cắm mở rộng" — vd: Không
+- "Cổng I/O mặt sau" — vd: Không
+- "Kết nối Internet" — vd: Không
+- "Card đồ hoạ onboard" — vd: Không
+- "Model GPU" — vd: Không
+- "Chip đồ họa (GPU)" — vd: Không
+- "Bus bộ nhớ" — vd: Không
+- "Chuẩn giao tiếp" — vd: Không
+- "Bộ nguồn đề xuất" — vd: Không
+- "Hỗ trợ OC" — vd: Không
+- "Yêu cầu cấp nguồn trực tiếp" — vd: Không
+- "Cổng xuất hình ảnh" — vd: Không
+- "Số lượng quạt" — vd: Không
+- "Loại Case" — vd: Không
+- "giá gốc" — vd: 18000000.0
+- "giá khuyến mãi" — vd: 14390000.0
+- "khuyến mãi quà" — vd: Phiếu mua hàng giảm 10% tối đa 300,000đ mua đèn năng lượng m
+- "price_promo_clean" — vd: 14390000.0
+- "capacity_clean"
+
+## Bảng "micro_karaoke" — ngành "Micro karaoke" (37 dòng)
+- "model_code" — vd: 180558
+- "sku" — vd: 164779000279
+- "productidweb" — vd: 283445.0
+- "category_code" — vd: 139
+- "brand_id" — vd: 88
+- "brand" — vd: Alpha Works
+- "Sản xuất tại" — vd: Trung Quốc
+- "Loại sản phẩm" — vd: Không dây
+- "Tần số hoạt động" — vd: 640 - 690 MHz
+- "Băng tần" — vd: UHF
+- "Độ méo tiếng" — vd: Dưới 0.5%
+- "Năm sản xuất" — vd: 2025.0
+- "giá gốc" — vd: 9720000.0
+- "giá khuyến mãi" — vd: 9720000.0
+- "khuyến mãi quà" — vd: Miễn phí công lắp đặt
+- "price_promo_clean" — vd: 9720000.0
+- "capacity_clean"
+
+## Bảng "micro_thu_am" — ngành "Micro thu âm điện thoại" (33 dòng)
+- "model_code" — vd: 147987
+- "sku" — vd: 160079000009
+- "productidweb" — vd: 286933
+- "category_code" — vd: 137
+- "brand_id" — vd: 233
+- "brand" — vd: Boya
+- "Tính năng cơ bản" — vd: Tự động kết nối | Lọc tiếng ồn | Ngắt micro tạm thời
+- "Loại pin bộ phát" — vd: 443
+- "Nhiệt độ hoạt động bộ phát" — vd: 2022
+- "Thời gian hoạt động bộ thu" — vd: 6.0
+- "Dung lượng pin hộp sạc" — vd: 3.0
+- "Sạc đầy bộ thu" — vd: 454
+- "Chu kỳ sạc" — vd: 16
+- "Khoảng cách truyền" — vd: Tối đa 50 m
+- "Phụ kiện đi kèm" — vd: 2 mic phát | Lọc gió | Cáp sạc | 1 mic thu | Sách hướng dẫn
+- "Băng tần" — vd: 2.4 Ghz
+- "Năm sản xuất" — vd: 2022.0
+- "Cổng sạc" — vd: Type-C
+- "Cổng tai nghe, headphone" — vd: Lightning
+- "Kết nối" — vd: Bluetooth
+- "Loại sản phẩm" — vd: Micro thu âm không dây
+- "Sản xuất tại" — vd: Trung Quốc
+- "Tương thích" — vd: iOS (iPhone)
+- "Thời gian sử dụng" — vd: 8 - 10 tiếng
+- "Thương hiệu của" — vd: Trung Quốc
+- "Khối lượng máy" — vd: 255
+- "Loại pin hộp sạc" — vd: 50
+- "Dung lượng pin bộ phát" — vd: 360.0
+- "Thời gian hoạt động bộ phát" — vd: 6.0
+- "Thời gian sạc bộ phát" — vd: 70 phút
+- "Tần số hoạt động" — vd: Low Cut Off: 50 Hz – 20 kHz, Low Cut On: 100 Hz – 20 kHz, 2.
+- "Loại pin bộ thu" — vd: Li-ion
+- "Dung lượng pin bộ thu" — vd: 360.0
+- "Thời gian sạc bộ thu" — vd: 70 phút
+- "Công suất truyền / phát" — vd: <20 dBm
+- "Nhiệt độ hoạt động bộ thu" — vd: -10° đến 45°C
+- "Hướng thu âm" — vd: Đa hướng
+- "Áp suất âm thanh (SPL)" — vd: 120.0
+- "Kích thước" — vd: 46.06×30.96×21.83 mm, 54.20×28.36×22.49 mm
+- "Sạc đầy bộ phát" — vd: ~ 50 phút
+- "Phiên bản" — vd: Trắng
+- "giá gốc" — vd: 2345000.0
+- "giá khuyến mãi" — vd: 2150000.0
+- "khuyến mãi quà" — vd: Phiếu mua hàng mua Pin tiểu (đơn hàng từ 80.000đ trở lên) tr
+- "price_promo_clean" — vd: 2150000.0
+- "capacity_clean"
+
+## Bảng "tu_lanh" — ngành "Tủ Lạnh" (1692 dòng)
+- "model_code" — vd: 165156
+- "sku" — vd: 1751097000147
+- "productidweb" — vd: 358160
+- "category_code" — vd: 38
+- "brand_id" — vd: 2
+- "brand" — vd: Samsung
+- "Kiểu dáng" — vd: Ngăn đá dưới
+- "Công nghệ làm lạnh" — vd: Công nghệ làm lạnh vòm All-around Cooling giúp kiểm soát chặ
+- "Sản xuất tại" — vd: Việt Nam
+- "Thời gian ra mắt" — vd: 2025
+- "Chất liệu khay ngăn lạnh" — vd: Kính cường lực
+- "Dung tích tổng" — vd: 313 lít
+- "Dung tích ngăn đá" — vd: 92 lít
+- "Dung tích ngăn lạnh" — vd: 215 lít
+- "Điện năng tiêu thụ" — vd: 381
+- "Chất liệu thân vỏ" — vd: Kim loại phủ sơn tĩnh điện
+- "Số người sử dụng" — vd: 3 - 4 người
+- "Dung tích sử dụng" — vd: 307 lít
+- "Công nghệ tiết kiệm điện" — vd: Digital Inverter
+- "Công nghệ bảo quản thực phẩm" — vd: Ngăn đông mềm -1 độ C Optimal Fresh Zone
+- "Tiện ích" — vd: Hệ thống làm đá tự động Auto Ice Maker | Lấy nước bên ngoài 
+- "Chất liệu động cơ" — vd: Ống dẫn gas bằng Đồng và Nhôm - Lá tản nhiệt bằng Nhôm
+- "Dung tích ngăn chuyển đổi" — vd: Không có
+- "Số cửa" — vd: 2 cánh
+- "Cao" — vd: 170
+- "Ngang" — vd: 59
+- "Sâu" — vd: 66
+- "Khối lượng máy" — vd: 63
+- "Lấy nước ngoài" — vd: Có
+- "Chế độ tự động" — vd: Có
+- "giá gốc" — vd: 14990000.0
+- "giá khuyến mãi" — vd: 10990000.0
+- "khuyến mãi quà" — vd: Phiếu mua hàng Máy lọc không khí/Hút bụi trị giá 300,000đ áp
+- "price_promo_clean" — vd: 10990000.0
+- "capacity_clean" — vd: 313.0
+
+## Bảng "tu_mat_tu_dong" — ngành "Tủ mát, tủ đông" (222 dòng)
+- "model_code" — vd: 165210
+- "sku" — vd: 1750894000045
+- "productidweb" — vd: 362701
+- "category_code" — vd: 40
+- "brand_id" — vd: 184
+- "brand" — vd: Hoà Phát
+- "Sản xuất tại" — vd: Việt Nam
+- "Thời gian ra mắt" — vd: 2025
+- "Dung tích tổng" — vd: 300 lít
+- "Điện năng tiêu thụ" — vd: 2.85 kWh/ngày
+- "Công nghệ tiết kiệm điện" — vd: Không có
+- "Tiện ích" — vd: Nút điều khiển nhiệt độ bên ngoài tủ | Khóa cửa tủ | Giỏ đựn
+- "Chất liệu động cơ" — vd: Nhôm sơn tĩnh điện
+- "Số cửa" — vd: 2 cửa
+- "Cao" — vd: 188
+- "Ngang" — vd: 63
+- "Sâu" — vd: 61
+- "Khối lượng máy" — vd: 64
+- "Độ ồn" — vd: < 42 dB
+- "Loại Gas" — vd: R600a
+- "Loại sản phẩm" — vd: Tủ mát
+- "Chất liệu mặt" — vd: Công nghệ kính Low-E
+- "Công nghệ" — vd: Quạt đối lưu | Làm lạnh trực tiếp
+- "Chất liệu ruột" — vd: Nhựa HIPS
+- "Dung tích ngăn đông mềm" — vd: Không
+- "Thương hiệu của" — vd: Việt Nam
+- "Số ngăn" — vd: 1 ngăn mát
+- "Nhiệt độ ngăn đông (độ C)" — vd: 0 - 10°C
+- "giá gốc" — vd: 10300000.0
+- "giá khuyến mãi" — vd: 2990000.0
+- "khuyến mãi quà" — vd: Phiếu mua hàng Máy lọc nước Sanaky trị giá 500,000đ | Phiếu 
+- "price_promo_clean" — vd: 2990000.0
+- "capacity_clean" — vd: 300.0

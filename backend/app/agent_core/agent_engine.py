@@ -5,7 +5,9 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.agent_core.intent import extract_intent, has_enough_slots, kw_declines
-from app.agent_core.retriever import search_products, price_spread_products, get_catalog_metadata
+from app.agent_core.retriever import (search_products, price_spread_products, get_catalog_metadata,
+                                       category_table_for, hydrate_rows)
+from app.agent_core.sql_tool import agent_query
 from app.agent_core.advisor import build_cards, generate_advisor
 from app.agent_core.compare import build_comparison
 from app.agent_core.detail import (is_detail_question, wants_product_list,
@@ -94,8 +96,8 @@ def router_edge(state: AgentState) -> str:
     intent = state.get("intent", {})
     count = state.get("clarify_count", 0)
     # Luật cứng: ngành hàng và NGÂN SÁCH là bắt buộc trước khi đề xuất —
-    # không phó mặc cho LLM quyết needs_clarification (nó hay bỏ qua ngân sách).
-    missing_required = not intent.get("category") or not intent.get("budget_max")
+    # 3. Yêu cầu category, không bắt buộc ngân sách nữa
+    missing_required = not intent.get("category")
     declines = bool(intent.get("declines_more_info"))
     if _is_detail_followup(state):
         route = "detail"
@@ -103,7 +105,7 @@ def router_edge(state: AgentState) -> str:
         # Xã giao/ngoài chủ đề: đáp thân thiện rồi lái về mua sắm, không đụng catalog.
         route = "chitchat"
     elif intent.get("is_meta_inquiry"):
-        route = "retrieve"
+        route = "meta_inquiry"
     elif intent.get("unsupported_product"):
         # Khách hỏi mặt hàng không kinh doanh -> nói thật + gợi ý nhóm liên quan có bán.
         route = "unsupported"
@@ -144,7 +146,10 @@ def clarify_node(state: AgentState, config) -> AgentState:
         qs = (qs + ["Anh/chị dự tính ngân sách khoảng bao nhiêu ạ?"])[-2:]
     # Chỉ chào ở lượt trợ lý mở lời đầu tiên của phiên; các lượt sau vào thẳng câu hỏi.
     greeted = any(m.get("role") == "assistant" for m in state.get("history", []))
-    if greeted:
+    transition = intent.get("transition_message")
+    if transition:
+        opener = transition
+    elif greeted:
         opener = "Dạ, em cần thêm chút thông tin để chọn đúng máy cho mình:"
     elif cat:
         opener = f"Chào bạn! Để tư vấn chuẩn dòng **{cat}** theo đúng nhu cầu, bạn chia sẻ thêm giúp em:"
@@ -177,6 +182,20 @@ def chitchat_node(state: AgentState, config) -> AgentState:
     history = state.get("history", []) + [{"role": "assistant", "content": text}]
     return {"response": text, "stage": "collecting", "question": None,
             "cards": [], "comparison": None, "assumptions": [], "warnings": [], "history": history}
+
+
+def meta_inquiry_node(state: AgentState, config) -> AgentState:
+    """Khách hỏi ngược lại (meta-inquiry): Giải thích thuật ngữ/lý do, sau đó hỏi lại."""
+    intent = state.get("intent", {})
+    reply = (intent.get("meta_reply") or "").strip()
+    if not reply:
+        reply = "Dạ, anh/chị cần em giải thích thêm về tiêu chí nào ạ?"
+    text = reply
+    log.info("meta_inquiry_node: reply=%r", text[:80])
+    history = state.get("history", []) + [{"role": "assistant", "content": text}]
+    return {"response": text, "question": None, "stage": "collecting",
+            "cards": [], "comparison": None, "assumptions": [], "warnings": [], "history": history,
+            "clarify_count": state.get("clarify_count", 0) + 1}
 
 
 def unsupported_node(state: AgentState, config) -> AgentState:
@@ -220,11 +239,27 @@ def detail_node(state: AgentState, config) -> AgentState:
 def retrieval_node(state: AgentState, config) -> AgentState:
     _notify(config, "Em đang tìm máy phù hợp trong catalog…")
     intent = state.get("intent", {})
+    res = None
     if (intent.get("declines_more_info") and intent.get("category")
             and not intent.get("budget_max") and not intent.get("is_meta_inquiry")):
         # Khách nhờ chọn giúp, chưa chốt ngân sách -> 3 đại diện rẻ/trung/cao thay vì top điểm.
         res = price_spread_products(intent["category"], db_path=_cfg(config, "db_path"))
-    else:
+    elif not intent.get("is_meta_inquiry") and _cfg(config, "llm") is not None:
+        # Đường chính cho MỌI truy vấn tìm hàng (đơn giản lẫn ràng buộc thông số):
+        # tool SQL — AI soạn SELECT theo schema md, tự sửa tối đa 3 lần; thất bại -> khuôn cũ.
+        db_path = _cfg(config, "db_path")
+        cat_table = category_table_for(intent["category"], db_path) if intent.get("category") else None
+        agent_res = agent_query(_cfg(config, "llm"), state.get("query", ""), intent,
+                                cat_table, db_path)
+        if agent_res is not None:
+            prods = hydrate_rows(agent_res["rows"], db_path) if agent_res.get("rows") else []
+            res = {"status": "custom_query" if prods else "no_products_found", 
+                   "sql_query": agent_res.get("sql", ""),
+                   "total_matches_found": len(prods),
+                   "top_3_products": prods[:3], "all_top_k": prods[:5]}
+        else:
+            log.info("retrieval_node: tool SQL không cho kết quả dùng được -> khuôn cũ")
+    if res is None:
         res = search_products(
             query=state.get("query", ""),
             category=intent.get("category"),
@@ -281,6 +316,7 @@ def get_compiled_graph():
         wf.add_node("intent_node", intent_node)
         wf.add_node("clarify_node", clarify_node)
         wf.add_node("chitchat_node", chitchat_node)
+        wf.add_node("meta_inquiry_node", meta_inquiry_node)
         wf.add_node("unsupported_node", unsupported_node)
         wf.add_node("detail_node", detail_node)
         wf.add_node("retrieval_node", retrieval_node)
@@ -290,10 +326,11 @@ def get_compiled_graph():
         wf.add_edge(START, "intent_node")
         wf.add_conditional_edges("intent_node", router_edge,
                                  {"clarify": "clarify_node", "detail": "detail_node",
-                                  "chitchat": "chitchat_node", "unsupported": "unsupported_node",
-                                  "retrieve": "retrieval_node"})
+                                  "chitchat": "chitchat_node", "meta_inquiry": "meta_inquiry_node",
+                                  "unsupported": "unsupported_node", "retrieve": "retrieval_node"})
         wf.add_edge("clarify_node", END)
         wf.add_edge("chitchat_node", END)
+        wf.add_edge("meta_inquiry_node", END)
         wf.add_edge("unsupported_node", END)
         wf.add_edge("detail_node", END)
         wf.add_edge("retrieval_node", "advisor_node")

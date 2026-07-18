@@ -37,7 +37,16 @@ def _price_val(row: Dict[str, Any]) -> float | None:
 
 def build_comparison(rows: List[Dict[str, Any]], priority_features: List[str]) -> ComparisonTable | None:
     """Bảng so sánh side-by-side, mọi ô lấy trực tiếp từ DB (không qua LLM)."""
-    rows = rows[:3]
+    from app.agent_core.presenters import product_display_name
+    unique_rows = []
+    seen = set()
+    for r in rows:
+        key = r.get("model_code") or r.get("sku") or product_display_name(r)
+        if key not in seen:
+            seen.add(key)
+            unique_rows.append(r)
+            
+    rows = unique_rows[:3]
     if len(rows) < 2:
         return None
     products = [product_display_name(r) for r in rows]
