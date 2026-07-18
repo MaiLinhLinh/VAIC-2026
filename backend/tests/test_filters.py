@@ -25,3 +25,23 @@ def test_people_constraint_overlap():
     prof = NeedProfile(category="tu_lanh", constraints={"số người": [4, 5]})
     out = apply_hard_filters(ps, prof)
     assert len(out) == 1 and out[0].specs["Số người sử dụng"].value == [3, 4]
+
+
+def test_numeric_range_constraint_enforces_minimum_bound():
+    ps = [
+        Product(category="Màn hình máy tính", category_code="man_hinh", model_code="a", sku="a",
+                brand="A", display_name="Màn hình A",
+                price=SourcedValue.of(4_000_000, "catalog"),
+                original_price=SourcedValue.of(4_000_000, "catalog"), sale_price=SourcedValue.missing(),
+                specs={"Kích thước màn hình": SourcedValue.of(14, "thông số nhà sản xuất")},
+                spec_doc="", promo_text=None, raw={}),
+        Product(category="Màn hình máy tính", category_code="man_hinh", model_code="b", sku="b",
+                brand="B", display_name="Màn hình B",
+                price=SourcedValue.of(5_000_000, "catalog"),
+                original_price=SourcedValue.of(5_000_000, "catalog"), sale_price=SourcedValue.missing(),
+                specs={"Kích thước màn hình": SourcedValue.of(15.6, "thông số nhà sản xuất")},
+                spec_doc="", promo_text=None, raw={}),
+    ]
+    prof = NeedProfile(category="man_hinh", constraints={"kích thước": [15, None]})
+    out = apply_hard_filters(ps, prof)
+    assert len(out) == 1 and out[0].display_name == "Màn hình B"

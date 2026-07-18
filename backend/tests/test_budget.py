@@ -1,4 +1,4 @@
-from app.advice.budget import budget_alternatives, describe_tradeoff
+from app.advice.budget import budget_alternatives, describe_tradeoff, minimum_budget_options
 from app.catalog.loader import ProductStore
 from app.schemas import Product, SourcedValue, NeedProfile, ScoredProduct
 
@@ -24,3 +24,13 @@ def test_describe_tradeoff_price_delta():
     cheaper = ScoredProduct(product=mk("B", 8_900_000), score=0.0)
     txt = describe_tradeoff(cheaper, current_price=12_400_000)
     assert "3.500.000đ" in txt   # 12.4tr - 8.9tr
+
+
+def test_minimum_budget_options_ignore_old_budget_but_keep_other_needs():
+    st = ProductStore([mk("A", 12_000_000), mk("B", 8_900_000), mk("C", 7_500_000)])
+    prof = NeedProfile(category="tu_lanh", budget_min=30_000_000, prefs=["tiết kiệm điện"])
+
+    options = minimum_budget_options(prof, st)
+
+    assert options
+    assert options[0].product.price.value == 7_500_000

@@ -1,4 +1,5 @@
 from __future__ import annotations
+import re
 from typing import Callable, Optional
 from pydantic import BaseModel, Field
 from app.schemas import NeedProfile, AdviceResult, Product
@@ -11,15 +12,23 @@ from app.retrieval.engine import RetrievalEngine
 from app.advice.generate import generate_advice
 from app.advice.streaming import stream_advice
 from app.advice.verify import verify_advice, is_grounded
-from app.advice.provenance import build_fact_card
+from app.advice.provenance import build_fact_card, format_vnd
 from app.advice.compare import build_comparison
-from app.advice.budget import budget_alternatives, describe_tradeoff
+from app.advice.budget import budget_alternatives, describe_tradeoff, minimum_budget_options
 from app.advice.detail import resolve_product, is_detail_question, answer_about_product
 
-_CHEAPER_KW = ["re hon", "gia re hon", "gia thap hon", "bot tien", "giam ngan sach",
-               "ha ngan sach", "dat qua", "mac qua", "re hon nua", "gia mem hon"]
-_PRICIER_KW = ["cao cap hon", "dat hon nua", "nang ngan sach", "tang ngan sach",
-               "chi them tien", "loai xin hon"]
+_BUDGET_INTENTS = (
+    ("minimum", re.compile(
+        r"\b(?:(?:ngan sach|gia|muc gia).{0,20}(?:toi thieu|thap nhat|re nhat|khoi diem)|"
+        r"(?:toi thieu|it nhat|can|phai them|noi ngan sach).{0,20}bao nhieu)\b"
+    )),
+    ("down", re.compile(
+        r"\b(?:(?:gia )?(?:re|thap|mem) hon|bot tien|(?:giam|ha) ngan sach|dat qua|mac qua)\b"
+    )),
+    ("up", re.compile(
+        r"\b(?:cao cap hon|dat hon|(?:nang|tang) ngan sach|chi them tien|loai xin hon)\b"
+    )),
+)
 _LIST_KW = ["may khac", "san pham khac", "cai khac", "lua chon khac", "danh sach",
             "may nao khac", "con gi khac", "quay lai", "xem lai danh sach", "so sanh lai"]
 
@@ -47,6 +56,8 @@ class TurnResult(BaseModel):
 
 
 def _safe_summary(advice: AdviceResult) -> str:
+    if not advice.cards:
+        return advice.message
     lines = ["Dạ em gợi ý các máy sau (thông tin lấy trực tiếp từ catalog):"]
     for i, c in enumerate(advice.cards, 1):
         price = next((l.value for l in c.lines if l.label == "Giá"), "chưa có dữ liệu")
@@ -55,13 +66,9 @@ def _safe_summary(advice: AdviceResult) -> str:
     return "\n".join(lines)
 
 
-def _budget_direction(message: str) -> str | None:
-    flat = strip_accents(message.lower())
-    if any(kw in flat for kw in _CHEAPER_KW):
-        return "down"
-    if any(kw in flat for kw in _PRICIER_KW):
-        return "up"
-    return None
+def _budget_intent(message: str) -> str | None:
+    flat = " ".join(strip_accents(message.lower()).split())
+    return next((intent for intent, pattern in _BUDGET_INTENTS if pattern.search(flat)), None)
 
 
 class Orchestrator:
@@ -81,11 +88,12 @@ class Orchestrator:
                 on_status(text)
 
         if state.stage == "recommended":
-            # a) Nâng/hạ ngân sách
-            if state.last_top_price:
-                direction = _budget_direction(message)
-                if direction is not None:
-                    return self._budget_turn(state, direction)
+            # a) Nâng / hạ / hỏi mức ngân sách tối thiểu
+            intent = _budget_intent(message)
+            if intent == "minimum" and state.profile.category:
+                return self._minimum_budget_turn(state)
+            if intent in {"down", "up"} and state.last_top_price:
+                return self._budget_turn(state, intent)
             # b) Hỏi kỹ về MỘT sản phẩm cụ thể trong danh sách vừa đề xuất (deep-dive)
             detail = self._detail_turn(state, message)
             if detail is not None:
@@ -115,13 +123,18 @@ class Orchestrator:
             if on_delta is not None:
                 advice, streamed = stream_advice(reco, state.profile, self.llm, on_delta)
             else:
-                advice, streamed = verify_advice(generate_advice(reco, state.profile, self.llm)), False
+                advice = generate_advice(reco, state.profile, self.llm)
+                # Empty-result copy is deterministic. With no cards, numeric verification
+                # would reject the user's own budget and produce an empty list heading.
+                if advice.cards:
+                    advice = verify_advice(advice)
+                streamed = False
             state.stage = "recommended"
             state.last_products = [s.product for s in reco.top3]
             state.focused_sku = None
             state.last_top_price = (reco.top3[0].product.price.value
                                     if reco.top3 and reco.top3[0].product.price.available else None)
-            reply = advice.message if is_grounded(advice) else _safe_summary(advice)
+            reply = advice.message if not advice.cards or is_grounded(advice) else _safe_summary(advice)
             if advice.assumptions:
                 suffix = "\n\n(" + " ".join(advice.assumptions) + ")"
                 reply += suffix
@@ -187,3 +200,27 @@ class Orchestrator:
                 reply=f"Dạ anh/chị muốn tìm hiểu kỹ máy nào ạ? ({names})",
                 stage="recommended", need=state.profile)
         return None
+
+    def _minimum_budget_turn(self, state: ChatState):
+        options = minimum_budget_options(state.profile, self.store)
+        if not options:
+            reply = ("Dạ em chưa tính được mức ngân sách tối thiểu vì catalog hiện không có "
+                     "sản phẩm vừa giữ các ràng buộc trên vừa có dữ liệu giá ạ.")
+            advice = AdviceResult(message=reply, cards=[], assumptions=[], warnings=[])
+            return state, TurnResult(
+                reply=reply, stage="recommended", advice=advice, need=state.profile
+            )
+
+        best = options[0]
+        price = int(best.product.price.value)
+        reply = ("Dạ, nếu giữ các tiêu chí đã nêu và bỏ giới hạn ngân sách cũ, "
+                 f"mức thấp nhất trong catalog là {format_vnd(price)} với "
+                 f"{best.product.display_name} ạ.")
+        card = build_fact_card(best, state.profile)
+        advice = AdviceResult(message=reply, cards=[card], assumptions=[], warnings=[])
+        state.profile.budget_min = None
+        state.profile.budget_max = price
+        state.last_top_price = price
+        return state, TurnResult(
+            reply=reply, stage="recommended", advice=advice, need=state.profile
+        )
