@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://YOUR-BACKEND.onrender.com/api/:path*"
+      "destination": "https://l.facebook.com/l.php?u=https%3A%2F%2Femx-advisor-backend.onrender.com%2F%3Ffbclid%3DIwZXh0bgNhZW0CMTAAYnJpZBExOHNYWnowMEFCQzhYYUJBWHNydGMGYXBwX2lkEDIyMjAzOTE3ODgyMDA4OTIAAR6xd3kjRHITz5xF1BQ4Nn5KhP-qN1x7KCpQwn-kVbLHAhxMyCe-Mwa5kKjHSA_aem_G7syG_qG3jqLe4T8bbfzPg&h=AUA-M3eJ5Ux1s_4SNdcqrygMpT-c1cObKC8Fh-vhF_khCtzmTcvX2gr--c_6n7aMoqUtKYhbjBasQ0_M7W9ERFaaIHpnqqtyXGmDO28BkZBUQbTJ1h6-hbCbm0_TCnY"
     }
   ]
 }
