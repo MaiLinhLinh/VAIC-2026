@@ -8,6 +8,13 @@ from app.catalog.loader import ProductStore
 from app.nlu.parser import parse_need
 from app.nlu.preprocess import strip_accents, detect_category
 from app.dialogue.clarify import next_question, should_recommend, assumptions_for
+from app.dialogue.meta import (
+    capability_reply,
+    detect_meta_intent,
+    greeting_reply,
+    options_reply,
+    thanks_reply,
+)
 from app.retrieval.engine import RetrievalEngine
 from app.advice.generate import generate_advice
 from app.advice.streaming import stream_advice
@@ -41,6 +48,7 @@ def _wants_product_list(message: str) -> bool:
 class ChatState(BaseModel):
     profile: NeedProfile = Field(default_factory=NeedProfile)
     asked: list[str] = Field(default_factory=list)
+    skipped: list[str] = Field(default_factory=list)  # slot khách trả lời "không biết / bỏ qua"
     stage: str = "collecting"
     last_top_price: int | None = None
     last_products: list[Product] = Field(default_factory=list)   # ứng viên của lần đề xuất gần nhất
@@ -87,6 +95,13 @@ class Orchestrator:
             if on_status:
                 on_status(text)
 
+        pending_slot = state.asked[-1] if state.stage == "collecting" and state.asked else None
+        meta = detect_meta_intent(message, stage=state.stage, pending_slot=pending_slot)
+        if meta is not None:
+            handled = self._meta_turn(state, meta, pending_slot, notify, on_delta)
+            if handled is not None:
+                return handled
+
         if state.stage == "recommended":
             # a) Nâng / hạ / hỏi mức ngân sách tối thiểu
             intent = _budget_intent(message)
@@ -108,41 +123,84 @@ class Orchestrator:
                       "(tủ lạnh, máy sấy, máy rửa chén, tủ đông/tủ mát, đồng hồ thông minh, màn hình)?",
                 stage="collecting", need=state.profile)
 
-        q = next_question(state.profile, state.asked)
+        q = next_question(state.profile, state.asked, state.skipped)
         if q is not None:
             state.asked.append(q.slot)
             return state, TurnResult(reply=q.text, stage="collecting", question=q.text, need=state.profile)
 
-        if should_recommend(state.profile, state.asked):
-            for a in assumptions_for(state.profile, state.asked):
-                if a not in state.profile.assumptions:
-                    state.profile.assumptions.append(a)
-            notify("Em đang tìm máy phù hợp trong catalog…")
-            reco = self.engine.recommend(state.profile)
-            notify("Em đang soạn lời tư vấn…")
-            if on_delta is not None:
-                advice, streamed = stream_advice(reco, state.profile, self.llm, on_delta)
-            else:
-                advice = generate_advice(reco, state.profile, self.llm)
-                # Empty-result copy is deterministic. With no cards, numeric verification
-                # would reject the user's own budget and produce an empty list heading.
-                if advice.cards:
-                    advice = verify_advice(advice)
-                streamed = False
-            state.stage = "recommended"
-            state.last_products = [s.product for s in reco.top3]
-            state.focused_sku = None
-            state.last_top_price = (reco.top3[0].product.price.value
-                                    if reco.top3 and reco.top3[0].product.price.available else None)
-            reply = advice.message if not advice.cards or is_grounded(advice) else _safe_summary(advice)
-            if advice.assumptions:
-                suffix = "\n\n(" + " ".join(advice.assumptions) + ")"
-                reply += suffix
-                if streamed:
-                    on_delta(suffix)  # keep live-emitted text identical to final reply
-            return state, TurnResult(reply=reply, stage="recommended", advice=advice, need=state.profile)
+        if should_recommend(state.profile, state.asked, state.skipped):
+            return self._recommend_turn(state, notify, on_delta)
 
         return state, TurnResult(reply="Dạ anh/chị cho em thêm chút thông tin nhé.",
+                                 stage="collecting", need=state.profile)
+
+    def _recommend_turn(self, state: ChatState,
+                        notify: Callable[[str], None],
+                        on_delta: Optional[Callable[[str], None]]):
+        for a in assumptions_for(state.profile, state.asked):
+            if a not in state.profile.assumptions:
+                state.profile.assumptions.append(a)
+        notify("Em đang tìm máy phù hợp trong catalog…")
+        reco = self.engine.recommend(state.profile)
+        notify("Em đang soạn lời tư vấn…")
+        if on_delta is not None:
+            advice, streamed = stream_advice(reco, state.profile, self.llm, on_delta)
+        else:
+            advice = generate_advice(reco, state.profile, self.llm)
+            # Empty-result copy is deterministic. With no cards, numeric verification
+            # would reject the user's own budget and produce an empty list heading.
+            if advice.cards:
+                advice = verify_advice(advice)
+            streamed = False
+        state.stage = "recommended"
+        state.last_products = [s.product for s in reco.top3]
+        state.focused_sku = None
+        state.last_top_price = (reco.top3[0].product.price.value
+                                if reco.top3 and reco.top3[0].product.price.available else None)
+        reply = advice.message if not advice.cards or is_grounded(advice) else _safe_summary(advice)
+        if advice.assumptions:
+            suffix = "\n\n(" + " ".join(advice.assumptions) + ")"
+            reply += suffix
+            if streamed:
+                on_delta(suffix)  # keep live-emitted text identical to final reply
+        return state, TurnResult(reply=reply, stage="recommended", advice=advice, need=state.profile)
+
+    def _meta_turn(self, state: ChatState, meta: str, pending_slot: str | None,
+                   notify: Callable[[str], None],
+                   on_delta: Optional[Callable[[str], None]]):
+        """Trả lời các tin nhắn 'meta' (chào hỏi, cảm ơn, hỏi năng lực, hỏi lựa chọn,
+        'không biết'). Trả None nếu không xử lý -> đi tiếp pipeline thường."""
+        if meta == "greeting":
+            return state, TurnResult(reply=greeting_reply(), stage=state.stage, need=state.profile)
+        if meta == "thanks":
+            return state, TurnResult(reply=thanks_reply(), stage=state.stage, need=state.profile)
+        if meta == "capability":
+            return state, TurnResult(reply=capability_reply(), stage=state.stage, need=state.profile)
+        if meta == "ask_options" and pending_slot is not None:
+            return state, TurnResult(
+                reply=options_reply(state.profile, pending_slot, self.store),
+                stage="collecting", need=state.profile)
+        if meta == "dont_know" and pending_slot is not None:
+            return self._skip_slot_turn(state, pending_slot, notify, on_delta)
+        return None
+
+    def _skip_slot_turn(self, state: ChatState, slot: str,
+                        notify: Callable[[str], None],
+                        on_delta: Optional[Callable[[str], None]]):
+        """Khách không trả lời được câu hỏi đang chờ -> bỏ qua slot đó thay vì hỏi lặp lại."""
+        if slot not in state.skipped:
+            state.skipped.append(slot)
+        note = f"Em tạm bỏ qua '{slot}' vì anh/chị chưa chắc; khi nào rõ hơn em lọc lại giúp ạ."
+        if note not in state.profile.assumptions:
+            state.profile.assumptions.append(note)
+        q = next_question(state.profile, state.asked, state.skipped)
+        if q is not None:
+            state.asked.append(q.slot)
+            text = "Dạ không sao ạ. " + q.text
+            return state, TurnResult(reply=text, stage="collecting", question=q.text, need=state.profile)
+        if should_recommend(state.profile, state.asked, state.skipped):
+            return self._recommend_turn(state, notify, on_delta)
+        return state, TurnResult(reply="Dạ không sao ạ. Anh/chị cho em thêm chút thông tin khác nhé.",
                                  stage="collecting", need=state.profile)
 
     def _budget_turn(self, state: ChatState, direction: str):

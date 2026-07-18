@@ -55,8 +55,10 @@ def missing_critical_slots(profile: NeedProfile, asked: list[str]) -> list[SlotS
     return _unfilled_slots(profile, critical=True, asked=set(asked))
 
 
-def unresolved_critical_slots(profile: NeedProfile) -> list[SlotSpec]:
-    return _unfilled_slots(profile, critical=True, asked=set())
+def unresolved_critical_slots(profile: NeedProfile,
+                              skipped: list[str] | tuple[str, ...] = ()) -> list[SlotSpec]:
+    # skipped: slot khách đã trả lời "không biết / bỏ qua" — coi như đã chốt, không đòi lại.
+    return _unfilled_slots(profile, critical=True, asked=set(skipped))
 
 
 def _preference_question(profile: NeedProfile) -> str:
@@ -101,12 +103,13 @@ def _question(profile: NeedProfile, slot: SlotSpec) -> SlotQuestion:
     return SlotQuestion(slot=slot.slot, text=text, importance=slot.importance)
 
 
-def next_question(profile: NeedProfile, asked: list[str]) -> SlotQuestion | None:
+def next_question(profile: NeedProfile, asked: list[str],
+                  skipped: list[str] | tuple[str, ...] = ()) -> SlotQuestion | None:
     if profile.category is None or _declined(profile):
         return None
 
     if len(asked) >= MAX_QUESTIONS:
-        unresolved = {slot.slot: slot for slot in unresolved_critical_slots(profile)}
+        unresolved = {slot.slot: slot for slot in unresolved_critical_slots(profile, skipped)}
         slot = next((unresolved[name] for name in reversed(asked) if name in unresolved), None)
         return _question(profile, slot) if slot else None
 
@@ -116,11 +119,13 @@ def next_question(profile: NeedProfile, asked: list[str]) -> SlotQuestion | None
     return _question(profile, slots[0]) if slots else None
 
 
-def should_recommend(profile: NeedProfile, asked: list[str]) -> bool:
+def should_recommend(profile: NeedProfile, asked: list[str],
+                     skipped: list[str] | tuple[str, ...] = ()) -> bool:
     return bool(
         profile.category
         and (_declined(profile)
-             or (not unresolved_critical_slots(profile) and next_question(profile, asked) is None))
+             or (not unresolved_critical_slots(profile, skipped)
+                 and next_question(profile, asked, skipped) is None))
     )
 
 
