@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: emx-advisor-backend
+    runtime: python
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt && python scripts/build_catalog.py
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: LLM_BASE_URL
+        value: https://mkp-api.fptcloud.com/v1
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_MODEL
+        value: DeepSeek-V4-Flash
+      - key: DATASET_PATH
+        value: ../Dataset.xlsx
+      - key: CATALOG_PATH
+        value: ./data/catalog.normalized.json
+      - key: ENABLE_EMBEDDINGS
+        value: "false"
+      - key: FRONTEND_ORIGINS
+        sync: false

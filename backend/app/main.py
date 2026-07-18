@@ -14,7 +14,8 @@ from app.config import get_settings
 from app.agent_core.engine import AgentCoreEngine, OrchestratorEngine, Engine
 
 app = FastAPI(title="Trợ lý AI Điện Máy Xanh")
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:5173"],
+_origins = [o.strip() for o in get_settings().frontend_origins.split(",") if o.strip()]
+app.add_middleware(CORSMiddleware, allow_origins=_origins,
                    allow_methods=["*"], allow_headers=["*"])
 
 # Typewriter fallback for turns with no live LLM stream (clarify questions, stream

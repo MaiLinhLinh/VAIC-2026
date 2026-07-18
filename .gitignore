@@ -9,4 +9,6 @@ dist/
 .pytest_cache/
 *.egg-info/
 products.db
-backend/app/agent_core/products.db
+# products.db cua agent_core phai duoc commit de deploy (khong the rebuild tren server
+# vi file Excel nguon Spec_cate_gia.cleaned.xlsx khong duoc track trong repo)
+!backend/app/agent_core/products.db

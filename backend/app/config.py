@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     dataset_path: str = "../Dataset.xlsx"
     catalog_path: str = "./data/catalog.normalized.json"
     enable_embeddings: bool = False
+    # Danh sách origin được phép gọi API (CORS), phân tách bằng dấu phẩy.
+    frontend_origins: str = "http://localhost:5173"
     # Luồng phục vụ: "agent_core" (LangGraph + SQLite) hoặc "orchestrator" (bản cũ).
     pipeline: str = "agent_core"
     # DB SQLite của agent_core; đường dẫn tuyệt đối mặc định, override bằng AGENT_DB_PATH.
