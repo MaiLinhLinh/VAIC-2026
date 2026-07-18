@@ -83,6 +83,32 @@ def score_product(prod: Dict[str, Any], query: str, priority_features: Optional[
         
     return score
 
+def price_spread_products(category: str, db_path: Optional[str] = None) -> Dict[str, Any]:
+    """Khách từ chối chốt ngân sách -> chọn 3 đại diện rẻ / tầm trung / cao cấp của ngành
+    (thay vì top theo điểm, để khách định hình mặt bằng giá)."""
+    db_path = _resolve_db(db_path)
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    sql = "SELECT * FROM all_products WHERE category = ? AND price_clean > 0 ORDER BY price_clean ASC"
+    rows = conn.execute(sql, (category,)).fetchall()
+    conn.close()
+    prods = []
+    for r in rows:
+        p = dict(r)
+        p["_score"] = 0.0
+        p["name"] = (f"Model {p.get('model_code') or p.get('sku', 'N/A')} - {p.get('brand', '')}"
+                     if p.get("model_code") or p.get("sku") else str(p.get("key_specs_summary", "Sản phẩm")))
+        p["price"] = p.get("price_clean") or 0
+        prods.append(p)
+    if not prods:
+        return {"status": "no_products_found", "sql_query": sql, "total_matches_found": 0,
+                "top_3_products": [], "all_top_k": []}
+    idx = sorted({0, len(prods) // 2, len(prods) - 1})
+    picks = [prods[i] for i in idx]
+    return {"status": "price_spread", "sql_query": sql.replace("?", f"'{category}'"),
+            "total_matches_found": len(prods), "top_3_products": picks, "all_top_k": picks}
+
+
 def search_products(
     query: str, 
     category: Optional[str] = None, 

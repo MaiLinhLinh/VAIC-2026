@@ -1,10 +1,13 @@
 from __future__ import annotations
+import logging
 from typing import Any, Dict, List, Tuple
 from app.schemas import AdviceResult, FactCard
 from app.nlu.preprocess import strip_accents
 from app.agent_core.presenters import product_display_name, build_detail_card
 from app.advice.provenance import facts_for_llm
 from app.advice.verify import verify_advice, is_grounded
+
+log = logging.getLogger("agent_core")
 
 _POSITION: Dict[str, int] = {
     "dau tien": 0, "thu nhat": 0, "may 1": 0, "cai 1": 0, "so 1": 0, "thu 1": 0, "mau 1": 0,
@@ -72,9 +75,14 @@ def answer_detail(row: Dict[str, Any], question: str, llm) -> Tuple[str, FactCar
             f"FACTS:\n{facts}\n\nTrả lời khách theo đúng quy tắc.")
     try:
         message = llm.complete_text(_DETAIL_SYSTEM, user)
-    except Exception:
+    except Exception as e:
+        log.warning("detail: LLM lỗi (%s) -> safe summary", e)
         message = ""
     result = verify_advice(AdviceResult(message=message or "", cards=[card], assumptions=[], warnings=[]))
     if not message or not is_grounded(result):
+        if message:
+            log.warning("detail: FAIL-CLOSED — số không truy được nguồn -> safe summary (warnings=%s)",
+                        list(result.warnings))
         return _safe_summary(row, card), card
+    log.info("detail: câu trả lời LLM grounded")
     return message, card

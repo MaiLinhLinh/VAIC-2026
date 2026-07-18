@@ -1,10 +1,13 @@
 from __future__ import annotations
+import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 from app.schemas import AdviceResult, FactCard
 from app.agent_core.presenters import build_reco_card
 from app.agent_core.retriever import get_catalog_metadata
 from app.advice.provenance import facts_for_llm, format_vnd
 from app.advice.verify import allowed_numbers, line_is_grounded, verify_advice, is_grounded
+
+log = logging.getLogger("agent_core")
 
 _SYSTEM = (
     "Bạn là chuyên gia tư vấn điện máy. NGUYÊN TẮC:\n"
@@ -15,11 +18,13 @@ _SYSTEM = (
     "KHÔNG đổi sang '10 triệu' hay '10,01 triệu'; thông số giữ nguyên đơn vị như FACTS).\n"
     "1c. KHÔNG cộng/gộp/tính tổng hay làm tròn các con số (ví dụ KHÔNG cộng dung tích ngăn đá + ngăn "
     "lạnh thành 'tổng ~330 lít'); chỉ nêu lại từng con số đúng như FACTS.\n"
-    "2. Trình bày thông số bằng lợi ích thực tế (Inverter -> tiết kiệm điện, RAM lớn -> đa nhiệm mượt) "
+    "2. Trình bày thông số bằng lợi ích thực tế (VD: Inverter -> tiết kiệm điện, RAM lớn -> đa nhiệm mượt, ...) "
     "nhưng không gắn con số tự bịa.\n"
     "3. Phân tích đánh đổi (trade-off) rõ giữa các lựa chọn để khách dễ quyết.\n"
     "4. Nếu trạng thái là budget_fallback: nói rõ không có sản phẩm trong ngân sách đó, rồi giới thiệu "
     "các mẫu giá gần nhất và ưu điểm để khách cân nhắc tăng ngân sách.\n"
+    "4b. Nếu trạng thái là price_spread: khách nhờ chọn giúp và chưa chốt ngân sách — nói rõ em chọn "
+    "đại diện 3 tầm giá (tiết kiệm / tầm trung / cao cấp) để anh/chị dễ định hình, rồi giới thiệu từng mức.\n"
     "5. Giọng chuyên nghiệp, mạch lạc, súc tích, đúng ngữ pháp."
 )
 
@@ -50,14 +55,18 @@ def generate_advisor(query: str, intent: Dict[str, Any], rows: List[Dict[str, An
     """Sinh tư vấn top-3 + trade-off. Trả (message, streamed, warnings). Fail-closed nếu bịa số."""
     det = deterministic_message(intent, status, None)
     if det is not None:
+        log.info("advisor: dùng văn mẫu tất định (status=%s), không gọi LLM", status)
         return det, False, []
     if not rows:
         return ("Rất tiếc, hiện chưa có sản phẩm phù hợp. Bạn thử nới ngân sách hoặc đổi tiêu chí nhé!",
                 False, [])
 
     facts = facts_for_llm(cards)
+    assump = [a for a in (intent.get("assumptions") or []) if a]
+    assump_txt = (f"Giả định của em (phải nói rõ với khách rằng đây là em đang giả định): "
+                  f"{'; '.join(assump)}\n" if assump else "")
     user = (f"Trạng thái tìm kiếm: {status}\nFACTS (chỉ dùng dữ kiện này):\n{facts}\n\n"
-            f"Nhu cầu khách: {query}\n\nHãy tư vấn top sản phẩm kèm phân tích trade-off.")
+            f"Nhu cầu khách: {query}\n{assump_txt}\nHãy tư vấn top sản phẩm kèm phân tích trade-off.")
 
     # Streaming: phát từng dòng đã verify (line-level fail-closed).
     if on_delta is not None:
@@ -86,7 +95,10 @@ def generate_advisor(query: str, intent: Dict[str, Any], rows: List[Dict[str, An
             return _blocking(llm, user, cards)
         result = verify_advice(AdviceResult(message="".join(parts), cards=cards, assumptions=[], warnings=[]))
         if not is_grounded(result):
+            log.warning("advisor(stream): FAIL-CLOSED — số không truy được nguồn -> safe summary "
+                        "(warnings=%s)", list(result.warnings))
             return _safe_summary(cards), False, list(result.warnings)
+        log.info("advisor(stream): câu trả lời LLM grounded, phát đủ")
         return result.message, emitting, []
 
     return _blocking(llm, user, cards)
@@ -95,11 +107,15 @@ def generate_advisor(query: str, intent: Dict[str, Any], rows: List[Dict[str, An
 def _blocking(llm, user: str, cards: List[FactCard]) -> Tuple[str, bool, List[str]]:
     try:
         message = llm.complete_text(_SYSTEM, user)
-    except Exception:
+    except Exception as e:
+        log.warning("advisor: LLM lỗi (%s) -> safe summary", e)
         return _safe_summary(cards), False, []
     result = verify_advice(AdviceResult(message=message, cards=cards, assumptions=[], warnings=[]))
     if not is_grounded(result):
+        log.warning("advisor: FAIL-CLOSED — số không truy được nguồn -> safe summary (warnings=%s)",
+                    list(result.warnings))
         return _safe_summary(cards), False, list(result.warnings)
+    log.info("advisor: câu trả lời LLM grounded")
     return result.message, False, []
 
 
