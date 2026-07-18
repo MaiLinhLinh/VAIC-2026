@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://emx-advisor-backend.onrender.com/"
+      "destination": "https://emx-advisor-backend.onrender.com/api/:path*"
     }
   ]
 }
