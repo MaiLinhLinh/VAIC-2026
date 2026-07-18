@@ -124,7 +124,7 @@ header button:hover { background: rgba(255, 255, 255, 0.32); }
 
 /* ===== Recommendation cards ===== */
 .card {
-  background: #fff; border: 1px solid var(--card-border); border-radius: 16px;
+  background: #fff; border: 1px solid var(--card-border); border-radius: 0;
   padding: 12px 14px; margin-top: 10px;
   box-shadow: var(--shadow-soft);
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
@@ -197,7 +197,7 @@ header button:hover { background: rgba(255, 255, 255, 0.32); }
 
 /* Bảng so sánh ứng viên (Part C) — khớp design token của UI mới */
 .compare {
-  background: #fff; border: 1px solid var(--sky-100); border-radius: 14px;
+  background: #fff; border: 1px solid var(--sky-100); border-radius: 0;
   padding: 12px 14px; margin-top: 8px; box-shadow: var(--shadow-soft);
 }
 .compare-title { font-weight: 800; color: var(--sky-700); margin-bottom: 8px; }

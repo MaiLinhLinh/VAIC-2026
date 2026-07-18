@@ -60,6 +60,8 @@ def build_reco_card(row: Dict[str, Any], priority_features: List[str]) -> FactCa
     else:
         missing.append("giá")
     lines.append(FactLine(label="Thương hiệu", value=row.get("brand") or "N/A", source="catalog"))
+    if row.get("url"):
+        lines.append(FactLine(label="Link sản phẩm", value=str(row["url"]), source="catalog"))
 
     specs = load_specs(row)
     prefs_low = [p.lower() for p in (priority_features or [])]
@@ -93,6 +95,8 @@ def build_detail_card(row: Dict[str, Any]) -> FactCard:
     else:
         missing.append("giá")
     lines.append(FactLine(label="Thương hiệu", value=row.get("brand") or "N/A", source="catalog"))
+    if row.get("url"):
+        lines.append(FactLine(label="Link sản phẩm", value=str(row["url"]), source="catalog"))
     for k, v in load_specs(row).items():
         lines.append(FactLine(label=k, value=v, source="thông số nhà sản xuất"))
     if row.get("gift_promo"):
