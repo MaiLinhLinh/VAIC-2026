@@ -13,7 +13,7 @@ máy lạnh, vật tư lắp đặt (ống đồng, gas, công khoan…) tính R
 cho máy lạnh, chỉ nói phí giao được miễn/thu theo mốc giỏ hàng.
 """
 
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from app.nlu.preprocess import strip_accents
 
@@ -69,3 +69,102 @@ def closing_hook(category: Optional[str] = None, price: float = 0.0,
         return " ".join(sentences)
     return (f"Phí giao hàng/lắp đặt sẽ hiện rõ theo địa chỉ khi {addr} đặt hàng ạ — "
             f"{addr} muốn {self_term} hướng dẫn đặt hàng luôn không ạ?")
+
+
+"""Bán chéo (cross-sell): khi khách vừa chốt/xem kỹ một máy, gợi ý thêm 1 sản phẩm THẬT
+trong catalog thuộc ngành hàng bổ trợ hợp lý (VD máy giặt <-> máy sấy). Ánh xạ chỉ khai báo
+cặp ngành hàng có ý nghĩa mua kèm thực tế trong 14 category của catalog — KHÔNG suy đoán
+phụ kiện không kinh doanh (tai nghe, ốp lưng...). Sản phẩm gợi ý luôn lấy giá/tên thật từ DB."""
+
+_CROSS_SELL_MAP: Dict[str, List[str]] = {
+    "may giat": ["may say quan ao"],
+    "may say quan ao": ["may giat"],
+    "tu lanh": ["tu mat/tu dong"],
+    "tu mat/tu dong": ["tu lanh"],
+    "may tinh de ban": ["man hinh may tinh", "may in"],
+    "man hinh may tinh": ["may tinh de ban"],
+    "may in": ["may tinh de ban"],
+    "micro karaoke": ["micro thu am"],
+    "micro thu am": ["micro karaoke"],
+}
+
+
+def _match_catalog_category(name: str, categories: List[str]) -> Optional[str]:
+    target = _flat(name)
+    for c in categories:
+        if _flat(c) == target:
+            return c
+    return None
+
+
+def _row_sku(row: Dict[str, Any]) -> str:
+    return str(row.get("model_code") or row.get("sku") or "")
+
+
+def cross_sell_suggestion(category: Optional[str], price: float, db_path: Optional[str] = None,
+                          exclude_sku: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """Tìm 1 sản phẩm ngành hàng bổ trợ THẬT trong catalog, giá không vượt quá 1.5 lần giá
+    máy đang mua (giữ combo hợp lý về ngân sách). None nếu không có ánh xạ hoặc catalog
+    không có ứng viên phù hợp (không bịa gợi ý)."""
+    candidates = _CROSS_SELL_MAP.get(_flat(category), [])
+    if not candidates:
+        return None
+    from app.agent_core.retriever import get_catalog_metadata, search_products
+    categories = get_catalog_metadata(db_path)["categories"]
+    max_price = price * 1.5 if price else None
+    for cand in candidates:
+        real_cat = _match_catalog_category(cand, categories)
+        if not real_cat:
+            continue
+        res = search_products(query="", category=real_cat, max_price=max_price,
+                              top_k=5, db_path=db_path)
+        rows = [r for r in (res.get("top_3_products") or res.get("all_top_k") or [])
+                if _row_sku(r) != exclude_sku and float(r.get("price_clean") or 0) > 0]
+        if rows:
+            rows.sort(key=lambda r: float(r["price_clean"]))
+            return rows[0]
+    return None
+
+
+def cross_sell_line(row: Dict[str, Any], addr: str = "anh/chị", self_term: str = "em") -> str:
+    """Câu gợi mở mua kèm, luôn kèm TÊN NGÀNH HÀNG + tên + giá thật lấy từ catalog. Bắt buộc nêu
+    ngành hàng vì product_display_name() chỉ trả hãng+mã (VD "Casper 179074"), không tự nói lên
+    đây là loại máy gì -> thiếu ngữ cảnh khiến gợi ý trông như sản phẩm không liên quan."""
+    from app.agent_core.presenters import product_display_name
+    from app.advice.provenance import format_vnd
+    name = product_display_name(row)
+    category = (row.get("category") or "").strip()
+    label = f"{category} {name}" if category and category.lower() not in name.lower() else name
+    price = float(row.get("price_clean") or 0)
+    price_txt = format_vnd(int(price)) if price > 0 else "chưa có dữ liệu giá"
+    return (f"Nhân tiện, nhiều khách hay mua kèm {label} (giá {price_txt}, nguồn: catalog) để "
+            f"dùng chung combo tiện hơn — {addr} có muốn {self_term} giới thiệu thêm không ạ?")
+
+
+# Lưới từ khoá nhận diện khách CHỐT ĐƠN (xác nhận mua) — đường chính để ghi nhận lịch sử mua
+# hàng trong phiên, phục vụ chăm sóc sau mua (bảo hành/ưu đãi tra theo đúng máy đã mua).
+_ORDER_CONFIRM_KW = [
+    "chot don", "chot may nay", "chot mua", "lay may nay", "mua may nay", "dat hang di",
+    "dat hang giup", "xac nhan mua", "ok mua", "chot luon", "lay luon may nay",
+    "mua luon may nay", "dong y mua", "dat may nay", "chot don hang", "minh lay may nay",
+    "em lay may nay", "anh lay may nay", "chi lay may nay",
+]
+
+# Lưới nhận diện câu hỏi CHĂM SÓC SAU MUA: khách nhắc tới máy/đơn ĐÃ MUA trước đó (khác với
+# hỏi bảo hành chung chung của một máy đang xem lần đầu).
+_AFTERSALES_KW = [
+    "may da mua", "don da mua", "da mua truoc do", "lan truoc mua", "may minh da mua",
+    "may em da mua", "may toi da mua", "may đã mua", "don hang truoc", "may minh mua hom truoc",
+    "may em mua hom truoc", "khach hang cu", "khach cu", "uu dai khach cu", "uu dai cho khach cu",
+    "bao hanh may da mua", "bao hanh don da mua", "may da dat mua",
+]
+
+
+def is_order_confirmation(message: str) -> bool:
+    flat = strip_accents(message.lower())
+    return any(k in flat for k in _ORDER_CONFIRM_KW)
+
+
+def is_aftersales_question(message: str) -> bool:
+    flat = strip_accents(message.lower())
+    return any(k in flat for k in _AFTERSALES_KW)
