@@ -49,7 +49,76 @@ def _price_value(row: Dict[str, Any]) -> float:
         return 0.0
 
 
-def build_reco_card(row: Dict[str, Any], priority_features: List[str]) -> FactCard:
+def _normalize_pid(raw: Any) -> str | None:
+    if raw is None:
+        return None
+    pid = str(raw).strip()
+    if pid.endswith(".0"):
+        pid = pid[:-2]
+    if not pid or pid.lower() in ("nan", "none", "null"):
+        return None
+    return pid
+
+
+def _lookup_web_meta(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Lấy productidweb + link/ảnh/rating đã cào sẵn từ bảng danh mục trong products.db.
+
+    DB là nguồn chính (prod không gọi được dienmayxanh.com); chỉ khi DB thiếu
+    link/ảnh mới fallback cào trực tiếp."""
+    meta: Dict[str, Any] = {"productidweb": _normalize_pid(row.get("productidweb")),
+                            "link": None, "image": None, "rating": None}
+    table_name = row.get("category_table")
+    sku = row.get("sku")
+    model_code = row.get("model_code")
+    if table_name and (sku or model_code):
+        import sqlite3
+        from app.config import get_settings
+        try:
+            conn = sqlite3.connect(get_settings().agent_db_path)
+            cursor = conn.cursor()
+            select = (f'SELECT productidweb, "url (crawl)", "ảnh (crawl)", "rating (crawl)" '
+                      f'FROM {table_name}')
+            row_db = None
+            if sku:
+                cursor.execute(f"{select} WHERE sku = ?", (sku,))
+                row_db = cursor.fetchone()
+            if (row_db is None or row_db[0] is None) and model_code:
+                cursor.execute(f"{select} WHERE model_code = ?", (model_code,))
+                row_db = cursor.fetchone()
+            conn.close()
+            if row_db:
+                meta["productidweb"] = meta["productidweb"] or _normalize_pid(row_db[0])
+                link, image, rating = row_db[1], row_db[2], row_db[3]
+                if link and str(link).startswith("http"):
+                    meta["link"] = str(link)
+                if image and str(image).startswith("http"):
+                    meta["image"] = str(image)
+                try:
+                    if rating is not None and str(rating).strip() not in ("", "nan"):
+                        meta["rating"] = float(rating)
+                except (ValueError, TypeError):
+                    pass
+        except Exception:
+            pass
+
+    if meta["productidweb"] and not (meta["link"] and meta["image"]):
+        from app.advice.crawler import fetch_product_info
+        link, image = fetch_product_info(meta["productidweb"])
+        meta["link"] = meta["link"] or link
+        meta["image"] = meta["image"] or image
+    return meta
+
+
+def _apply_db_rating(card: FactCard, rating: float | None) -> None:
+    """Nếu crawl runtime không lấy được đánh giá, dùng rating đã lưu trong DB."""
+    if rating is None or card.rating is not None:
+        return
+    card.rating = rating
+    card.lines.append(FactLine(label="Đánh giá", value=f"{rating}/5", source="dienmayxanh.com"))
+    card.missing = [m for m in card.missing if m != "đánh giá người dùng (review)"]
+
+
+def build_reco_card(row: Dict[str, Any], priority_features: List[str], self_term: str = "em") -> FactCard:
     """Card 'vì sao đề xuất': giá + hãng + vài spec liên quan ưu tiên của khách; mọi dòng gắn nguồn."""
     name = product_display_name(row)
     lines: List[FactLine] = []
@@ -82,47 +151,13 @@ def build_reco_card(row: Dict[str, Any], priority_features: List[str]) -> FactCa
                                source="khuyến mãi (catalog)"))
     missing.extend(_ALWAYS_MISSING)
 
-    # Extract productidweb
-    productidweb = row.get("productidweb")
-    if not productidweb:
-        table_name = row.get("category_table")
-        sku = row.get("sku")
-        model_code = row.get("model_code")
-        if table_name and (sku or model_code):
-            import sqlite3
-            from app.config import get_settings
-            try:
-                conn = sqlite3.connect(get_settings().agent_db_path)
-                cursor = conn.cursor()
-                row_db = None
-                if sku:
-                    cursor.execute(f"SELECT productidweb FROM {table_name} WHERE sku = ?", (sku,))
-                    row_db = cursor.fetchone()
-                if (row_db is None or row_db[0] is None) and model_code:
-                    cursor.execute(f"SELECT productidweb FROM {table_name} WHERE model_code = ?", (model_code,))
-                    row_db = cursor.fetchone()
-                if row_db and row_db[0] is not None:
-                    productidweb = row_db[0]
-                conn.close()
-            except Exception:
-                pass
-
-    if productidweb is not None:
-        productidweb = str(productidweb).strip()
-        if productidweb.endswith('.0'):
-            productidweb = productidweb[:-2]
-        if productidweb.lower() in ('nan', 'none', 'null', ''):
-            productidweb = None
-
-    product_link, image_url = None, None
-    if productidweb:
-        from app.advice.crawler import fetch_product_info
-        product_link, image_url = fetch_product_info(productidweb)
-
-    card = FactCard(title=f"Vì sao em đề xuất {name}?", lines=lines, missing=missing,
-                    productidweb=productidweb, image_url=image_url, product_link=product_link)
+    meta = _lookup_web_meta(row)
+    card = FactCard(title=f"Vì sao {self_term} đề xuất {name}?", lines=lines, missing=missing,
+                    productidweb=meta["productidweb"], image_url=meta["image"],
+                    product_link=meta["link"])
     from app.advice.crawler import enrich_card_with_detail
     enrich_card_with_detail(card)
+    _apply_db_rating(card, meta["rating"])
     return card
 
 
@@ -146,45 +181,11 @@ def build_detail_card(row: Dict[str, Any]) -> FactCard:
                                source="khuyến mãi (catalog)"))
     missing.extend(_ALWAYS_MISSING)
 
-    # Extract productidweb
-    productidweb = row.get("productidweb")
-    if not productidweb:
-        table_name = row.get("category_table")
-        sku = row.get("sku")
-        model_code = row.get("model_code")
-        if table_name and (sku or model_code):
-            import sqlite3
-            from app.config import get_settings
-            try:
-                conn = sqlite3.connect(get_settings().agent_db_path)
-                cursor = conn.cursor()
-                row_db = None
-                if sku:
-                    cursor.execute(f"SELECT productidweb FROM {table_name} WHERE sku = ?", (sku,))
-                    row_db = cursor.fetchone()
-                if (row_db is None or row_db[0] is None) and model_code:
-                    cursor.execute(f"SELECT productidweb FROM {table_name} WHERE model_code = ?", (model_code,))
-                    row_db = cursor.fetchone()
-                if row_db and row_db[0] is not None:
-                    productidweb = row_db[0]
-                conn.close()
-            except Exception:
-                pass
-
-    if productidweb is not None:
-        productidweb = str(productidweb).strip()
-        if productidweb.endswith('.0'):
-            productidweb = productidweb[:-2]
-        if productidweb.lower() in ('nan', 'none', 'null', ''):
-            productidweb = None
-
-    product_link, image_url = None, None
-    if productidweb:
-        from app.advice.crawler import fetch_product_info
-        product_link, image_url = fetch_product_info(productidweb)
-
+    meta = _lookup_web_meta(row)
     card = FactCard(title=f"Thông tin chi tiết: {name}", lines=lines, missing=missing,
-                    productidweb=productidweb, image_url=image_url, product_link=product_link)
+                    productidweb=meta["productidweb"], image_url=meta["image"],
+                    product_link=meta["link"])
     from app.advice.crawler import enrich_card_with_detail
     enrich_card_with_detail(card)
+    _apply_db_rating(card, meta["rating"])
     return card

@@ -8,16 +8,6 @@ const SUGGESTIONS = [
     icon: 'M21 7.5l-9-5.25L3 7.5m18 0l-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25m0-9v9',
   },
   {
-    label: 'Khuyến mãi hot',
-    message: 'Hiện đang có chương trình khuyến mãi nào hot không?',
-    icon: 'M9.568 3H5.25A2.25 2.25 0 0 0 3 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 0 0 5.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 0 0 9.568 3Z M6 6h.008v.008H6V6Z',
-  },
-  {
-    label: 'Kiểm tra đơn hàng',
-    message: 'Tôi muốn kiểm tra tình trạng đơn hàng của mình.',
-    icon: 'M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z',
-  },
-  {
     label: 'So sánh sản phẩm',
     message: 'Tôi muốn so sánh hai sản phẩm để chọn máy phù hợp hơn.',
     icon: 'M7.5 21 3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5',

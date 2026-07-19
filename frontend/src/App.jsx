@@ -104,7 +104,9 @@ export default function App() {
         <button onClick={onReset}>Làm mới</button>
       </header>
       <div className="chat" ref={chatRef}>
-        {messages.map((m, i) => <Message key={i} msg={m} />)}
+        {messages.map((m, i) => (
+          <Message key={i} msg={m} isLast={i === messages.length - 1} onSuggest={send} disabled={busy} />
+        ))}
         {messages.length === 1 && <QuickSuggestions onPick={send} disabled={busy} />}
         {busy && status !== null && (
           <div className="msg bot">
@@ -120,7 +122,7 @@ export default function App() {
             question (send() guards against double-send) and focus is never kicked out. */}
         <input value={input} onChange={(e) => setInput(e.target.value)} autoFocus
                aria-label="Nội dung tư vấn"
-               placeholder="VD: mua tu lanh duoi 20tr cho nha 4 nguoi, tiet kiem dien" />
+               placeholder="Ví dụ: Nhà mình có 4 người, cần tủ lạnh tiết kiệm điện dưới 20 triệu" />
         <button disabled={busy} aria-label={busy ? 'Đang trả lời…' : 'Gửi tin nhắn'}>
           {busy ? (
             /* spinner: partial circle that rotates while the bot is replying */
