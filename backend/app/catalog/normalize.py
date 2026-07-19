@@ -1,10 +1,12 @@
 from __future__ import annotations
+from collections import Counter
 import math
 import re
 import pandas as pd
 from app.schemas import Product, SourcedValue
 from app.catalog.parsers import parse_number, parse_measure, parse_bool, parse_people, resolve_price
 from app.catalog.category_config import CategoryConfig, CATEGORY_CONFIGS
+from app.catalog.clean_rules import clean_sheet
 
 _SRC_SPEC = "thông số nhà sản xuất"
 
@@ -87,3 +89,15 @@ def build_catalog(xlsx_path: str) -> list[Product]:
         for rec in df.to_dict(orient="records"):
             products.append(normalize_row(rec, cfg))
     return products
+
+
+def build_catalog_with_report(xlsx_path: str) -> tuple[list[Product], dict[str, Counter]]:
+    """Build the normalized catalog through the per-sheet cleaning rules."""
+    products: list[Product] = []
+    reports: dict[str, Counter] = {}
+    for cfg in CATEGORY_CONFIGS.values():
+        df = pd.read_excel(xlsx_path, sheet_name=cfg.sheet_name)
+        cleaned_rows, report = clean_sheet(cfg.sheet_name, df.to_dict(orient="records"))
+        reports[cfg.sheet_name] = report
+        products.extend(normalize_row(row, cfg) for row in cleaned_rows)
+    return products, reports

@@ -42,6 +42,10 @@ def deterministic_message(intent: Dict[str, Any], status: str, db_path: Optional
         cats = ", ".join(f"**{c}**" for c in meta["categories"])
         return (f"Chào bạn, hệ thống hiện có **{len(meta['categories'])} danh mục** chính:\n\n{cats}\n\n"
                 "Bạn quan tâm danh mục nào, ngân sách và tính năng ra sao ạ?")
+    if status == "no_products_found":
+        return ("Dạ em không tìm thấy sản phẩm nào khớp đầy đủ yêu cầu này trong dữ liệu hiện có ạ. "
+                "Em sẽ không gợi ý sang sản phẩm khác loại khi chưa có xác nhận của anh/chị. "
+                "Anh/chị muốn đổi tiêu chí nào để em tìm lại không ạ?")
     return None
 
 
@@ -53,6 +57,13 @@ def generate_advisor(query: str, intent: Dict[str, Any], rows: List[Dict[str, An
     if det is not None:
         log.info("advisor: dùng văn mẫu tất định (status=%s), không gọi LLM", status)
         return det, False, []
+
+    if status == "relaxed_preferences":
+        features = ", ".join(intent.get("relaxed_features") or []) or "một số tính năng ưu tiên"
+        warning = ("Dạ, em vẫn tìm được các lựa chọn đúng nhóm sản phẩm và ngân sách. "
+                   f"Tuy nhiên catalog chưa xác nhận đầy đủ các tính năng: {features}; "
+                   "vì vậy em chỉ xếp đây là các lựa chọn gần nhất, không khẳng định máy có các tính năng đó.")
+        return warning + "\n\n" + _safe_summary(cards), False, []
 
     facts = facts_for_llm(cards)
     assump = [a for a in (intent.get("assumptions") or []) if a]
@@ -111,7 +122,7 @@ def _blocking(llm, user: str, cards: List[FactCard]) -> Tuple[str, bool, List[st
     result = verify_advice(AdviceResult(message=message, cards=cards, assumptions=[], warnings=[]))
     if not is_grounded(result):
         log.warning("advisor: LLM vi phạm lỗi số liệu, cảnh báo (warnings=%s)", list(result.warnings))
-        return result.message, False, list(result.warnings)
+        return _safe_summary(cards), False, list(result.warnings)
     log.info("advisor: câu trả lời LLM grounded")
     return result.message, False, []
 

@@ -10,13 +10,19 @@ log = logging.getLogger("agent_core")
 # Lưới dự phòng nhận diện khách từ chối (khi LLM chết); đường chính là ô
 # declines_more_info do LLM điền — hiểu được cả cách nói không có trong list.
 _DECLINE_KW = ["goi y dai", "cu goi y", "goi y luon", "gi cung duoc", "sao cung duoc",
-               "tuy em", "tuy ban", "khong biet", "chua biet", "tu van dai",
+               "tuy em", "tuy ban", "tu van dai",
                "chon giup", "chon dai", "khoi hoi"]
+_UNKNOWN_KW = ("khong biet", "chua biet", "khong ro", "chua ro", "ko biet", "ko ro")
 
 
 def kw_declines(query: str) -> bool:
     flat = strip_accents(query.lower())
     return any(k in flat for k in _DECLINE_KW)
+
+
+def kw_unknown_answer(query: str) -> bool:
+    flat = strip_accents(query.lower())
+    return any(k in flat for k in _UNKNOWN_KW)
 
 
 # Pydantic schema mô tả ý định tìm kiếm sản phẩm.
@@ -64,6 +70,10 @@ class IntentSchema(BaseModel):
     priority_features: List[str] = Field(
         default_factory=list,
         description="Các tính năng hoặc thông số đặc thù người dùng ưu tiên (màn hình lớn, pin trâu, mỏng nhẹ...)."
+    )
+    required_features: List[str] = Field(
+        default_factory=list,
+        description="Loại/công nghệ/tính năng khách nói rõ là bắt buộc hoặc gọi đích danh khi tìm (máy in laser -> laser; phải có Wi-Fi -> Wi-Fi)."
     )
     wants_comparison: bool = Field(
         default=False,
@@ -227,6 +237,7 @@ def extract_intent_fallback(query: str, history: Optional[List[Dict[str, str]]] 
         "budget_max": budget_max,
         "brand": matched_brand,
         "priority_features": priority_features,
+        "required_features": [],
         "wants_comparison": False,
         "assumptions": [],
         "declines_more_info": kw_declines(query),
@@ -240,7 +251,8 @@ _SCHEMA_HINT = (
     '{"is_meta_inquiry": bool, "meta_reply": string|null, "is_chitchat": bool, "smalltalk_reply": string|null, '
     '"category": string|null, "transition_message": string|null, "unsupported_product": string|null, '
     '"related_categories": string[], "budget_max": number|null, '
-    '"brand": string|null, "priority_features": string[], "wants_comparison": bool, "assumptions": string[], '
+    '"brand": string|null, "priority_features": string[], "required_features": string[], '
+    '"wants_comparison": bool, "assumptions": string[], '
     '"declines_more_info": bool, "needs_custom_query": bool, "needs_clarification": bool, '
     '"clarification_questions": string[]}'
 )
@@ -267,12 +279,16 @@ def extract_intent(query: str, history: Optional[List[Dict[str, str]]] = None,
             "trong CSDL gần với nhu cầu đó nhất.\n"
             "- is_meta_inquiry=true KHI VÀ CHỈ KHI khách hỏi yêu cầu giải thích về một khái niệm, thông số kỹ thuật (VD: 'màn OLED là gì?', 'dung tích là gì?'), thắc mắc tiêu chí, HOẶC hỏi về các phân loại sản phẩm (VD 'tủ lạnh có những dòng nào?'). Lúc này BẮT BUỘC điền meta_reply giải đáp ngắn gọn, nêu các phân loại phổ biến rồi hỏi lại để tiếp tục tư vấn. NẾU is_meta_inquiry=true, BẮT BUỘC để category=null và priority_features=[] để tránh hệ thống tự động tìm kiếm sản phẩm.\n"
             "- wants_comparison=true khi khách chủ động yêu cầu đưa ra nhiều sự lựa chọn hoặc so sánh (VD 'so sánh', 'có những option nào', 'các dòng máy'). False nếu khách chỉ nhờ tư vấn chung.\n"
+            "- required_features chỉ chứa điều kiện sản phẩm phải khớp: loại/công nghệ khách gọi đích danh "
+            "hoặc nói là bắt buộc (VD 'máy in laser' -> ['laser'], 'phải có Wi-Fi' -> ['Wi-Fi']). "
+            "Sở thích mềm để trong priority_features, không đưa vào required_features.\n"
             "- needs_clarification=true khi KHÁCH TRẢ LỜI QUÁ CHUNG CHUNG và bạn cần hỏi thêm để lọc sản phẩm (mục đích, bối cảnh người dùng, ngân sách). TUYỆT ĐỐI KHÔNG bật cờ này nếu khách đang hỏi ngược lại bạn (đó là is_meta_inquiry). False nếu khách vừa trả lời đủ hoặc từ chối bổ sung.\n"
             "- clarification_questions: 1-2 câu hỏi NGẮN, tự nhiên như người bán hàng thật, bám đúng bối cảnh "
             "khách vừa kể. TUYỆT ĐỐI không hỏi lại điều khách đã nói hoặc điều trợ lý đã hỏi trong lịch sử.\n"
             "- assumptions: các suy đoán bạn tự rút ra mà khách không nói rõ, ghi ngắn gọn.\n"
-            "- declines_more_info=true nếu khách né/từ chối cung cấp thêm ('gợi ý đại', 'gì cũng được', "
-            "'chọn giúp anh/chị',...).\n"
+            "- declines_more_info=true nếu khách từ chối TOÀN BỘ việc hỏi thêm ('gợi ý đại', 'gì cũng được', "
+            "'chọn giúp anh/chị',...). Nếu khách chỉ nói 'không biết/chưa rõ' để trả lời CÂU HIỆN TẠI thì "
+            "declines_more_info=false: hệ thống sẽ ghi nhận lượt đó và tiếp tục sang câu kế tiếp.\n"
             "- needs_custom_query=true khi khách ràng buộc theo THÔNG SỐ hoặc cách xếp hạng đặc biệt "
             "(dung tích/kích thước/số cửa/'ít tốn điện nhất'/'nhẹ nhất'...) — lọc cơ bản ngành+giá+hãng "
             "không đáp ứng được.\n"

@@ -10,6 +10,11 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
 from app.config import get_settings
+from app.agent_core.search_description import (
+    DESCRIPTION_COLUMN,
+    build_search_description,
+    select_description_fields,
+)
 _S = get_settings()
 EXCEL_PATH = _S.excel_source_path
 DB_PATH = _S.agent_db_path
@@ -84,6 +89,7 @@ def ingest_data():
         price_clean REAL,
         gift_promo TEXT,
         key_specs_summary TEXT,
+        search_description TEXT,
         full_specs_json TEXT
     )
     """)
@@ -109,7 +115,9 @@ def ingest_data():
                 df[col] = df[col].astype(str).str.strip().replace({'nan': '', 'None': '', 'null': ''})
 
         # Add cleaned numeric columns for accurate SQL querying
-        if 'giá khuyến mãi' in df.columns:
+        if 'giá hiệu lực' in df.columns:
+            df['price_promo_clean'] = df['giá hiệu lực'].apply(clean_price_number)
+        elif 'giá khuyến mãi' in df.columns:
             df['price_promo_clean'] = df['giá khuyến mãi'].apply(clean_price_number)
         elif 'giá gốc' in df.columns:
             df['price_promo_clean'] = df['giá gốc'].apply(clean_price_number)
@@ -127,6 +135,9 @@ def ingest_data():
 
         # Write table to SQLite
         df.to_sql(table_name, conn, if_exists='replace', index=False)
+
+        # Chọn cột mô tả một lần cho cả ngành: đủ độ phủ, không chứa ID/giá/khuyến mãi.
+        description_fields = select_description_fields(df.to_dict(orient='records'))
 
         # Populate unified table
         for idx, row in df.iterrows():
@@ -147,7 +158,8 @@ def ingest_data():
             # Build dict of specs excluding ID columns and internal clean columns
             specs_dict = {}
             for col in df.columns:
-                if col not in ['model_code', 'sku', 'productidweb', 'category_code', 'brand_id', 'brand', 'price_promo_clean', 'capacity_clean']:
+                if col not in ['model_code', 'sku', 'productidweb', 'category_code', 'brand_id', 'brand',
+                               'price_promo_clean', 'capacity_clean', DESCRIPTION_COLUMN]:
                     val = row[col]
                     if pd.notna(val) and str(val).strip() not in ['', 'nan', 'None']:
                         specs_dict[col] = str(val).strip()
@@ -157,14 +169,22 @@ def ingest_data():
             # Key summary for quick display and semantic scoring
             summary_items = [f"{k}: {v}" for k, v in list(specs_dict.items())[:8]]
             key_specs_summary = "; ".join(summary_items)
+            search_description = str(row.get(DESCRIPTION_COLUMN, '') or '').strip()
+            if not search_description or search_description.lower() == 'nan':
+                search_description = build_search_description(
+                    sheet_name, brand, specs_dict, description_fields
+                )
 
             cursor.execute("""
-            INSERT INTO all_products (model_code, sku, category, category_table, brand, price_orig, price_promo, price_clean, gift_promo, key_specs_summary, full_specs_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (model_code, sku, sheet_name, table_name, brand, price_orig, price_promo, price_clean, gift_promo, key_specs_summary, full_specs_json))
+            INSERT INTO all_products (model_code, sku, category, category_table, brand, price_orig, price_promo, price_clean, gift_promo, key_specs_summary, search_description, full_specs_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (model_code, sku, sheet_name, table_name, brand, price_orig, price_promo,
+                  price_clean, gift_promo, key_specs_summary, search_description, full_specs_json))
 
             total_products += 1
 
+    cursor.execute("""CREATE INDEX IF NOT EXISTS idx_all_products_category_price
+                      ON all_products(category, price_clean)""")
     conn.commit()
     conn.close()
     print(f"Hoàn tất! Đã nạp tổng cộng {total_products} sản phẩm vào cơ sở dữ liệu {DB_PATH}.")

@@ -60,10 +60,12 @@ def build_reco_card(row: Dict[str, Any], priority_features: List[str]) -> FactCa
     else:
         missing.append("giá")
     lines.append(FactLine(label="Thương hiệu", value=row.get("brand") or "N/A", source="catalog"))
-    if row.get("url"):
-        lines.append(FactLine(label="Link sản phẩm", value=str(row["url"]), source="catalog"))
-
+    
     specs = load_specs(row)
+    if specs.get("rating (crawl)"):
+        lines.append(FactLine(label="Đánh giá", value=f"{specs['rating (crawl)']} sao", source="dienmayxanh"))
+    if specs.get("url (crawl)"):
+        lines.append(FactLine(label="Link sản phẩm", value=str(specs["url (crawl)"]), source="catalog"))
     prefs_low = [p.lower() for p in (priority_features or [])]
     # Ưu tiên hiển thị: (1) spec khớp ưu tiên khách, (2) spec CÓ SỐ (để LLM có con số hợp lệ
     # để trích dẫn, giảm fail-closed), (3) spec còn lại. Tối đa 5 dòng spec.
@@ -137,9 +139,14 @@ def build_detail_card(row: Dict[str, Any]) -> FactCard:
     else:
         missing.append("giá")
     lines.append(FactLine(label="Thương hiệu", value=row.get("brand") or "N/A", source="catalog"))
-    if row.get("url"):
-        lines.append(FactLine(label="Link sản phẩm", value=str(row["url"]), source="catalog"))
-    for k, v in load_specs(row).items():
+    
+    specs = load_specs(row)
+    if specs.get("rating (crawl)"):
+        lines.append(FactLine(label="Đánh giá", value=f"{specs['rating (crawl)']} sao", source="dienmayxanh"))
+    if specs.get("url (crawl)"):
+        lines.append(FactLine(label="Link sản phẩm", value=str(specs["url (crawl)"]), source="catalog"))
+    
+    for k, v in specs.items():
         lines.append(FactLine(label=k, value=v, source="thông số nhà sản xuất"))
     if row.get("gift_promo"):
         lines.append(FactLine(label="Khuyến mãi/quà kèm", value=str(row["gift_promo"]),

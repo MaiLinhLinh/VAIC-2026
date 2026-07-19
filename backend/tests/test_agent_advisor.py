@@ -48,5 +48,22 @@ def test_no_products_deterministic():
     llm = FakeLLM(text_responses=["should not be used"])
     msg, streamed, warnings = generate_advisor("tủ lạnh", {"category": "Tủ Lạnh"},
                                                [], "no_products_found", llm, [])
-    assert "chưa có sản phẩm" in msg.lower()
+    assert "không tìm thấy sản phẩm" in msg.lower()
     assert streamed is False
+
+
+def test_relaxed_preferences_discloses_unverified_features_without_llm():
+    cards = build_cards(_rows(), ["gọi điện"])
+    llm = FakeLLM(text_responses=["Không được sử dụng"])
+    msg, streamed, warnings = generate_advisor(
+        "top sản phẩm", {"priority_features": ["gọi điện"],
+                         "relaxed_features": ["gọi điện", "SOS"]},
+        _rows(), "relaxed_preferences", llm, cards,
+    )
+
+    assert "chưa xác nhận đầy đủ" in msg
+    assert "không khẳng định" in msg
+    assert "gọi điện, SOS" in msg
+    assert llm.calls == []
+    assert streamed is False
+    assert warnings == []
