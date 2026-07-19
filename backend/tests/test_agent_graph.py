@@ -14,6 +14,16 @@ def _db(tmp_path):
     return db
 
 
+def _digital_db(tmp_path):
+    db = str(tmp_path / "digital.db")
+    make_db(db, [
+        {"category": "Máy tính để bàn", "brand": "Dell", "price_clean": 15_000_000, "specs": {}},
+        {"category": "Màn hình máy tính", "brand": "LG", "price_clean": 5_000_000, "specs": {}},
+        {"category": "Máy tính bảng", "brand": "Samsung", "price_clean": 8_000_000, "specs": {}},
+    ])
+    return db
+
+
 def _reco_llm():
     return FakeLLM(
         json_responses=[{"category": "Tủ Lạnh", "budget_max": 20000000, "priority_features": ["tiết kiệm điện"],
@@ -67,3 +77,55 @@ def test_reset_clears_memory(tmp_path):
                                        "brand": None, "budget_max": None}])
     out = eng.handle("s4", "máy 1 thế nào")
     assert out["stage"] == "collecting"
+
+
+def test_code_request_is_briefly_redirected_without_extra_llm_call(tmp_path):
+    db = _digital_db(tmp_path)
+    llm = FakeLLM(
+        json_responses=[{"category": None, "unsupported_product": "code C++",
+                         "is_chitchat": False, "needs_clarification": False}])
+    eng = AgentCoreEngine(llm=llm, db_path=db)
+    out = eng.handle("code-off-topic", "hãy code cho tôi file C++ ra dòng Hello World")
+    assert "chưa kinh doanh code" not in out["reply"].lower()
+    assert "không hỗ trợ viết code chi tiết" in out["reply"]
+    assert "Hello World" not in out["reply"]
+    assert "#include" not in out["reply"]
+    assert "Máy tính để bàn" in out["reply"]
+    assert "Màn hình máy tính" in out["reply"]
+    assert "muốn xem nhóm nào" in out["reply"]
+    assert len(llm.calls) == 1  # chỉ intent JSON, không gọi LLM lần hai để sinh code
+
+
+def test_general_knowledge_uses_short_reply_from_same_intent_call(tmp_path):
+    db = _digital_db(tmp_path)
+    cases = [
+        ("kinh tế chính trị là gì", "Kinh tế chính trị nghiên cứu quan hệ giữa kinh tế và quyền lực.",
+         "nghiên cứu quan hệ"),
+        ("HTML là gì", "HTML là ngôn ngữ đánh dấu dùng để tạo cấu trúc trang web.",
+         "ngôn ngữ đánh dấu"),
+        ("Việt Nam nằm ở châu lục nào", "Việt Nam nằm ở châu Á, thuộc khu vực Đông Nam Á.",
+         "châu Á"),
+    ]
+    for index, (query, reply, expected) in enumerate(cases):
+        llm = FakeLLM(json_responses=[{
+            "category": None, "unsupported_product": None, "is_chitchat": True,
+            "smalltalk_reply": reply, "needs_clarification": False,
+        }])
+        out = AgentCoreEngine(llm=llm, db_path=db).handle(
+            f"general-knowledge-{index}", query)
+        assert expected in out["reply"]
+        assert "chưa trả lời tốt" not in out["reply"]
+        assert "muốn xem nhóm nào" in out["reply"]
+        assert len(llm.calls) == 1
+
+
+def test_general_knowledge_does_not_duplicate_existing_pivot(tmp_path):
+    reply = ("HTML là ngôn ngữ đánh dấu dùng để tạo cấu trúc trang web. "
+             "Nếu cần tư vấn thiết bị học tập, em sẵn sàng hỗ trợ ạ.")
+    llm = FakeLLM(json_responses=[{
+        "category": None, "is_chitchat": True, "smalltalk_reply": reply,
+        "needs_clarification": False,
+    }])
+    out = AgentCoreEngine(llm=llm, db_path=_db(tmp_path)).handle("pivot-once", "HTML là gì")
+    assert out["reply"] == reply
+    assert len(llm.calls) == 1

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import ComparisonTable from './ComparisonTable'
+import ContextualSuggestions from './ContextualSuggestions'
 
 function CardMeta({ card }) {
   const hasRating = card.rating != null
@@ -30,7 +31,7 @@ function CardMeta({ card }) {
   )
 }
 
-export default function Message({ msg }) {
+export default function Message({ msg, isLast, onSuggest, disabled }) {
   const { role, text, recommendation } = msg
   const [activeCard, setActiveCard] = useState(null)
   const [activeTab, setActiveTab] = useState('specs') // 'specs' or 'promos'
@@ -50,7 +51,7 @@ export default function Message({ msg }) {
           Có số liệu chưa truy được nguồn — đã ẩn để tránh sai lệch.
         </div>
       )}
-      {recommendation?.comparison && <ComparisonTable table={recommendation.comparison} />}
+      {recommendation?.comparison && <ComparisonTable table={recommendation.comparison} cards={recommendation.cards} />}
       
       {recommendation?.cards && recommendation.cards.length > 0 && (
         <div className="product-cards-container">
@@ -79,20 +80,34 @@ export default function Message({ msg }) {
               <div className="product-card" key={i}>
                 {c.product_link ? (
                   <a href={c.product_link} target="_blank" rel="noopener noreferrer" className="product-card-main">
-                    {c.image_url ? (
-                      <div className="product-card-img-wrap">
+                    <div className="product-card-img-wrap">
+                      {c.image_url ? (
                         <img src={c.image_url} alt={titleText} />
-                      </div>
-                    ) : (
-                      <div className="product-card-img-wrap placeholder">
+                      ) : (
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                           <path strokeLinecap="round" strokeLinejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25" />
                         </svg>
-                      </div>
-                    )}
+                      )}
+                      
+                      {/* Floating Badges Overlay (Khuyến mãi) */}
+                      {promos.length > 0 && (
+                        <div className="product-card-badges-overlay">
+                          <span className="product-badge promo-badge">
+                            <span className="badge-icon">🎁</span>
+                            <span className="badge-text" title={promos[0]}>{promos[0]}</span>
+                            {promos.length > 1 && (
+                              <span className="promo-count-badge" title={promos.slice(1).join(', ')}>
+                                +{promos.length - 1}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="product-card-body">
                       <div className="product-card-title" title={titleText}>{titleText}</div>
-                      
+
                       {/* Price Row */}
                       {(priceLine || origPriceLine) && (
                         <div className="product-card-price-row">
@@ -102,21 +117,6 @@ export default function Message({ msg }) {
                       )}
 
                       <CardMeta card={c} />
-
-                      {/* Promo Highlights */}
-                      {promos.length > 0 && (
-                        <div className="product-card-promos">
-                          <div className="product-card-promo-badge">
-                            <svg viewBox="0 0 20 20" fill="currentColor" className="gift-icon">
-                              <path fillRule="evenodd" d="M5 5a3 3 0 015-2.236A3 3 0 0115 5h2a1 1 0 011 1v3a1 1 0 01-1 1h-1v5a2 2 0 01-2 2H6a2 2 0 01-2-2V10H3a1 1 0 01-1-1V6a1 1 0 011-1h2zm3-.882a1 1 0 00-.832.882H9.9A1 1 0 009 4.118zM11 5h1.732a1 1 0 00-.832-.882A1 1 0 0011 5zm-7 3v1h12V8H4zm1 2v5a1 1 0 001 1h3v-6H5zm6 6h3a1 1 0 001-1v-5h-4v6z" clipRule="evenodd" />
-                            </svg>
-                            <span className="promo-text">{promos[0]}</span>
-                          </div>
-                          {promos.length > 1 && (
-                            <div className="promo-more-badge">+{promos.length - 1} KM</div>
-                          )}
-                        </div>
-                      )}
 
                       <div className="product-card-btn">
                         <span>Đặt hàng ngay</span>
@@ -128,20 +128,34 @@ export default function Message({ msg }) {
                   </a>
                 ) : (
                   <div className="product-card-main static">
-                    {c.image_url ? (
-                      <div className="product-card-img-wrap">
+                    <div className="product-card-img-wrap">
+                      {c.image_url ? (
                         <img src={c.image_url} alt={titleText} />
-                      </div>
-                    ) : (
-                      <div className="product-card-img-wrap placeholder">
+                      ) : (
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
                           <path strokeLinecap="round" strokeLinejoin="round" d="m21 7.5-9-5.25L3 7.5m18 0-9 5.25m9-5.25v9l-9 5.25M3 7.5l9 5.25M3 7.5v9l9 5.25" />
                         </svg>
-                      </div>
-                    )}
+                      )}
+                      
+                      {/* Floating Badges Overlay (Khuyến mãi) */}
+                      {promos.length > 0 && (
+                        <div className="product-card-badges-overlay">
+                          <span className="product-badge promo-badge">
+                            <span className="badge-icon">🎁</span>
+                            <span className="badge-text" title={promos[0]}>{promos[0]}</span>
+                            {promos.length > 1 && (
+                              <span className="promo-count-badge" title={promos.slice(1).join(', ')}>
+                                +{promos.length - 1}
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
                     <div className="product-card-body">
                       <div className="product-card-title" title={titleText}>{titleText}</div>
-                      
+
                       {/* Price Row */}
                       {(priceLine || origPriceLine) && (
                         <div className="product-card-price-row">
@@ -151,21 +165,6 @@ export default function Message({ msg }) {
                       )}
 
                       <CardMeta card={c} />
-
-                      {/* Promo Highlights */}
-                      {promos.length > 0 && (
-                        <div className="product-card-promos">
-                          <div className="product-card-promo-badge">
-                            <svg viewBox="0 0 20 20" fill="currentColor" className="gift-icon">
-                              <path fillRule="evenodd" d="M5 5a3 3 0 015-2.236A3 3 0 0115 5h2a1 1 0 011 1v3a1 1 0 01-1 1h-1v5a2 2 0 01-2 2H6a2 2 0 01-2-2V10H3a1 1 0 01-1-1V6a1 1 0 011-1h2zm3-.882a1 1 0 00-.832.882H9.9A1 1 0 009 4.118zM11 5h1.732a1 1 0 00-.832-.882A1 1 0 0011 5zm-7 3v1h12V8H4zm1 2v5a1 1 0 001 1h3v-6H5zm6 6h3a1 1 0 001-1v-5h-4v6z" clipRule="evenodd" />
-                            </svg>
-                            <span className="promo-text">{promos[0]}</span>
-                          </div>
-                          {promos.length > 1 && (
-                            <div className="promo-more-badge">+{promos.length - 1} KM</div>
-                          )}
-                        </div>
-                      )}
                     </div>
                   </div>
                 )}
@@ -186,6 +185,10 @@ export default function Message({ msg }) {
             );
           })}
         </div>
+      )}
+
+      {isLast && role === 'bot' && onSuggest && (
+        <ContextualSuggestions cards={recommendation?.cards} onPick={onSuggest} disabled={disabled} />
       )}
 
       {recommendation?.assumptions?.length > 0 && (

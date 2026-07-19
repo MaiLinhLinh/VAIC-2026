@@ -2,16 +2,38 @@ import re
 import json
 import logging
 import requests
+from html import unescape
 
 logger = logging.getLogger("crawler")
 
 _CRAWL_CACHE = {}
 _DETAIL_CACHE = {}
 
+# Circuit breaker: trên prod, dienmayxanh.com thường chặn IP datacenter — sau
+# N lần lỗi liên tiếp thì ngừng cào để không làm chậm response (mỗi lần timeout 5-8s).
+_FAIL_STREAK = 0
+_FAIL_LIMIT = 3
+
+
+def _network_ok() -> bool:
+    return _FAIL_STREAK < _FAIL_LIMIT
+
+
+def _record_result(success: bool) -> None:
+    global _FAIL_STREAK
+    _FAIL_STREAK = 0 if success else _FAIL_STREAK + 1
+    if _FAIL_STREAK == _FAIL_LIMIT:
+        logger.warning("Crawler circuit breaker OPEN: %d consecutive failures, "
+                       "skipping further live crawls", _FAIL_STREAK)
+
 _HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 }
 _LDJSON_RE = re.compile(r'<script[^>]*application/ld\+json[^>]*>(.*?)</script>', re.S)
+# dienmayxanh có 2 vị trí đặt schema Product:
+# 1. <script type="application/ld+json"> block (phổ biến: tu_lanh, may_say_quan_ao, ...)
+# 2. <input id="jsonProductGTM" value="..."> HTML-encoded (phổ biến: man-hinh-may-tinh, ...)
+_GTM_INPUT_RE = re.compile(r'<input[^>]*id="jsonProductGTM"[^>]*value="([^"]*)"', re.I)
 _MAX_REVIEWS = 3
 
 def fetch_product_info(product_id) -> tuple[str | None, str | None]:
@@ -31,7 +53,10 @@ def fetch_product_info(product_id) -> tuple[str | None, str | None]:
         
     if pid in _CRAWL_CACHE:
         return _CRAWL_CACHE[pid]
-        
+
+    if not _network_ok():
+        return None, None
+
     url = "https://www.dienmayxanh.com/Ajax/GetViewedHistory"
     data = {
         'productIds[]': pid
@@ -67,15 +92,23 @@ def fetch_product_info(product_id) -> tuple[str | None, str | None]:
                     
             logger.info(f"Crawled product_id {pid}: link={link}, img={image}")
             _CRAWL_CACHE[pid] = (link, image)
+            _record_result(True)
             return link, image
+        _record_result(False)
     except Exception as e:
         logger.error(f"Error crawling product_id {pid}: {e}")
+        _record_result(False)
 
+    _CRAWL_CACHE[pid] = (None, None)
     return None, None
 
 
 def _parse_product_ldjson(html: str) -> dict | None:
-    """Tìm block JSON-LD @type=Product trong HTML trang sản phẩm."""
+    """Tìm block JSON-LD @type=Product trong HTML trang sản phẩm.
+
+    Thử cả hai vị trí đặt schema của dienmayxanh; trả về Product đầu tiên tìm được.
+    """
+    # Method 1: <script type="application/ld+json">
     for m in _LDJSON_RE.finditer(html):
         try:
             data = json.loads(m.group(1).strip())
@@ -83,6 +116,16 @@ def _parse_product_ldjson(html: str) -> dict | None:
             continue
         if isinstance(data, dict) and data.get("@type") == "Product":
             return data
+    # Method 2: <input id="jsonProductGTM"> (HTML-encoded JSON)
+    m = _GTM_INPUT_RE.search(html)
+    if m:
+        try:
+            data = json.loads(unescape(m.group(1)))
+        except (ValueError, TypeError):
+            pass
+        else:
+            if isinstance(data, dict) and data.get("@type") == "Product":
+                return data
     return None
 
 
@@ -148,16 +191,34 @@ def fetch_product_detail(product_link: str | None) -> dict | None:
     if product_link in _DETAIL_CACHE:
         return _DETAIL_CACHE[product_link]
 
+    if not _network_ok():
+        return None
+
     try:
         logger.info(f"Crawling product detail: {product_link}")
         response = requests.get(product_link, headers=_HEADERS, timeout=8)
         if response.status_code != 200:
             logger.warning(f"Detail crawl failed ({response.status_code}): {product_link}")
+            _record_result(False)
+            _DETAIL_CACHE[product_link] = None
             return None
         html = response.text
         product = _parse_product_ldjson(html)
+        # Installment không phụ thuộc JSON-LD, cào luôn để không mất dữ liệu.
+        installment = _extract_installment(html)
         if product is None:
-            logger.warning(f"No Product JSON-LD found: {product_link}")
+            logger.debug(f"No Product JSON-LD: {product_link}")
+            _record_result(True)  # mạng thông, chỉ là trang không có schema
+            if installment:
+                detail = {
+                    "stock_status": None,
+                    "rating": None,
+                    "review_count": None,
+                    "reviews": [],
+                    "installment": installment,
+                }
+                _DETAIL_CACHE[product_link] = detail
+                return detail
             _DETAIL_CACHE[product_link] = None
             return None
 
@@ -167,14 +228,17 @@ def fetch_product_detail(product_link: str | None) -> dict | None:
             "rating": rating,
             "review_count": review_count,
             "reviews": _extract_reviews(product),
-            "installment": _extract_installment(html),
+            "installment": installment,
         }
         logger.info(f"Detail crawled: stock={detail['stock_status']}, rating={rating}, "
                     f"reviews={review_count}, installment={detail['installment']}")
+        _record_result(True)
         _DETAIL_CACHE[product_link] = detail
         return detail
     except Exception as e:
         logger.error(f"Error crawling detail {product_link}: {e}")
+        _record_result(False)
+        _DETAIL_CACHE[product_link] = None
         return None
 
 

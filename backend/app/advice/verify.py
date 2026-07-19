@@ -37,8 +37,10 @@ def line_is_grounded(line: str, allowed: set[str]) -> bool:
     return all(n in allowed or n in _SAFE for n in extract_numbers(line))
 
 
-def verify_advice(result: AdviceResult) -> AdviceResult:
+def verify_advice(result: AdviceResult, extra_allowed: set[str] | None = None) -> AdviceResult:
     allowed = allowed_numbers(result.cards)
+    if extra_allowed:
+        allowed.update(extra_allowed)
     warnings = list(result.warnings)
     for n in extract_numbers(result.message):
         if n in allowed or n in _SAFE:
