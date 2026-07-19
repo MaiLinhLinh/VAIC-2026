@@ -10,6 +10,8 @@ def _db(tmp_path):
          "specs": {"Dung tích tổng": "300 lít", "Điện năng tiêu thụ": "350 kWh/năm"}},
         {"category": "Tủ Lạnh", "brand": "LG", "model_code": "TL2", "price_clean": 11_000_000,
          "specs": {"Dung tích tổng": "250 lít", "Điện năng tiêu thụ": "300 kWh/năm"}},
+        {"category": "Tủ Lạnh", "brand": "Toshiba", "model_code": "TL3", "price_clean": 13_000_000,
+         "specs": {"Dung tích tổng": "350 lít", "Điện năng tiêu thụ": "370 kWh/năm"}},
     ])
     return db
 
@@ -65,6 +67,26 @@ def test_detail_followup_uses_memory(tmp_path):
     out = eng.handle("s3", "máy 1 dung tích bao nhiêu")
     assert "300" in out["reply"]
     assert out["recommendation"]["cards"][0]["title"].startswith("Thông tin chi tiết")
+
+
+def test_compare_brand_followup_reuses_last_products(tmp_path):
+    eng = AgentCoreEngine(llm=_reco_llm(), db_path=_db(tmp_path))
+    eng.handle("brand-compare", "mua tủ lạnh dưới 20tr tiết kiệm điện")
+    eng.llm = FakeLLM(
+        json_responses=[{"category": "Máy tính để bàn", "budget_max": None,
+                         "priority_features": [], "needs_clarification": True,
+                         "is_meta_inquiry": False, "clarification_questions": [], "brand": None}],
+        text_responses=["Dạ em so sánh hai mẫu Toshiba trong danh sách vừa xem ạ."],
+    )
+
+    out = eng.handle("brand-compare", "so sánh Toshiba")
+
+    assert out["stage"] == "recommended"
+    assert out["need"]["category"] == "Tủ Lạnh"
+    assert len(out["recommendation"]["cards"]) == 2
+    assert all("Toshiba" in card["title"] for card in out["recommendation"]["cards"])
+    assert len(out["recommendation"]["comparison"]["products"]) == 2
+    assert out["trace"][1]["data"]["comparison_followup"] is True
 
 
 def test_reset_clears_memory(tmp_path):

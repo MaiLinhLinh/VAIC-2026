@@ -4,23 +4,25 @@
 - `all_products`: 1 dòng = 1 sản phẩm (SKU), gộp mọi ngành. Cột `id` là khoá DUY NHẤT của dòng.
 - `model_code` KHÔNG duy nhất (nhiều biến thể chung một mã) — không dùng làm khoá nhận diện.
 - Giá bán (VND) là `price_clean`; giá trị 0/NULL nghĩa là CHƯA CÓ DỮ LIỆU giá, không phải miễn phí — muốn lọc/xếp theo giá phải kèm `price_clean > 0`.
+- `search_description` là mô tả tìm kiếm đã chọn lọc (ngành + nhãn hàng + thông số), không chứa ID/giá/khuyến mãi/trường vận hành.
 - Mỗi ngành có bảng thông số riêng (1 dòng = 1 sản phẩm), JOIN với all_products qua `model_code`.
 - Cột thông số là TEXT thường kèm đơn vị (vd '313 lít', '27 inch') — so sánh số bằng `CAST("tên cột" AS REAL)` (SQLite lấy phần số đứng đầu chuỗi).
 - Tên cột tiếng Việt/có khoảng trắng phải bọc trong nháy kép: `"Dung tích tổng"`.
 
 
 ## Bảng all_products (mọi ngành) (8746 dòng)
-- "id" — vd: 1
+- "id" — vd: 4851
 - "model_code" — vd: 165156
 - "sku" — vd: 1751097000147
-- "category" — vd: Tủ Lạnh
+- "category" — vd: Micro karaoke
 - "category_table" — vd: tu_lanh
 - "brand" — vd: Samsung
 - "price_orig" — vd: 14990000.0
 - "price_promo" — vd: 10990000.0
-- "price_clean" — vd: 14990000.0
+- "price_clean" — vd: 1561091.0
 - "gift_promo" — vd: Phiếu mua hàng Máy lọc không khí/Hút bụi trị giá 300,000đ áp
 - "key_specs_summary" — vd: Kiểu dáng: Ngăn đá dưới; Công nghệ làm lạnh: Công nghệ làm l
+- "search_description" — vd: Nhóm sản phẩm: Tủ Lạnh; Nhãn hàng: Samsung; Kiểu dáng: Ngăn
 - "full_specs_json" — vd: {"Kiểu dáng": "Ngăn đá dưới", "Công nghệ làm lạnh": "Công ng
 
 ## Bảng "dong_ho_thong_minh" — ngành "Đồng hồ thông minh" (1336 dòng)
@@ -60,7 +62,6 @@
 - "Ngang" — vd: 43
 - "Dày" — vd: 9
 - "Khối lượng máy" — vd: 58
-- "Thiết kế" — vd: Không
 - "Độ phân giải camera trước" — vd: 2 camera 2 MP
 - "Chip xử lý (CPU)" — vd: SL8521ET
 - "Bộ nhớ" — vd: 512 MB
@@ -68,11 +69,23 @@
 - "Tương thích" — vd: iOS 10 trở lên | Android 4.3 trở lên
 - "Ứng dụng" — vd: Mibro
 - "Kết nối" — vd: Wifi | LBS | AGPS | Định vị bằng thuật toán AI | Định vị tro
-- "Đường kính" — vd: Không
 - "giá gốc" — vd: 1390000.0
 - "giá khuyến mãi" — vd: 1290000.0
 - "khuyến mãi quà" — vd: Huy hiệu cài balo cho bé - Kidcare | Phiếu mua Bảng vẽ Kidca
-- "price_promo_clean" — vd: 1290000.0
+- "Chống nước (ATM)" — vd: 5 ATM
+- "Thời gian sử dụng (nguyên văn)" — vd: Khoảng 22 giờ (ở chế độ GPS) | null
+- "Chu vi cổ tay (nguyên văn)" — vd: 140 - 210
+- "search_description" — vd: Nhóm sản phẩm: Đồng hồ thông minh; Nhãn hàng: Kidcare; Tiện
+- "tên sản phẩm" — vd: Zobo Sporty 1 42mm dây silicone
+- "giá hiệu lực" — vd: 1190000.0
+- "nguồn giá" — vd: crawl dienmayxanh, ngày 2026-07-17
+- "rating" — vd: 4.9
+- "lượt bán" — vd: 373.0
+- "bảo hành" — vd: Bộ sản phẩm gồm: Đồng hồ, Sạc ( Cáp sạc ), Sách hướng dẫn; B
+- "khuyến mãi" — vd: Phiếu mua Bảng vẽ Kidcare trị giá 30.000đ; Phiếu mua hàng gi
+- "url" — vd: https://www.dienmayxanh.com/dong-ho-thong-minh/zobo-sporty-1
+- "ảnh" — vd: https://cdn.tgdd.vn/Products/Images/7077/359401/zobo-sporty-
+- "price_promo_clean" — vd: 1190000.0
 - "capacity_clean"
 
 ## Bảng "man_hinh_may_tinh" — ngành "Màn hình máy tính" (469 dòng)
@@ -100,14 +113,26 @@
 - "Vesa" — vd: Có
 - "Điện năng tiêu thụ" — vd: 23W
 - "Cao" — vd: 447
-- "Ngang module phụ" — vd: 619
-- "Cao không chân" — vd: 365
-- "Độ dày không chân" — vd: 50
+- "Ngang module phụ" — vd: 619.0
+- "Cao không chân" — vd: 365.0
+- "Độ dày không chân" — vd: 50.0
 - "Loại màn hình" — vd: Phẳng
 - "giá gốc" — vd: 3490000.0
 - "giá khuyến mãi" — vd: 4890000.0
 - "khuyến mãi quà" — vd: Phiếu mua hàng Giá treo màn hình (Giá trị từ 500,000đ) trị g
-- "price_promo_clean" — vd: 4890000.0
+- "Số màu hiển thị" — vd: 16.7 triệu màu
+- "Độ tương phản tĩnh (nguyên văn)" — vd: 1.000.000:1 Max
+- "search_description" — vd: Nhóm sản phẩm: Màn hình máy tính; Nhãn hàng: Gigabyte; Tiện
+- "tên sản phẩm" — vd: Màn hình Gaming GIGABYTE GS27FA 27 inch FHD/IPS/180Hz/1ms
+- "giá hiệu lực" — vd: 2990000.0
+- "nguồn giá" — vd: crawl dienmayxanh, ngày 2026-07-17
+- "rating" — vd: 5.0
+- "lượt bán" — vd: 421.0
+- "bảo hành" — vd: Bộ bán hàng chuẩn: Cáp chuyển ( HDMI ), Dây nguồn ( 1 dây 2
+- "khuyến mãi" — vd: Phiếu mua hàng Giá treo màn hình (Giá trị từ 500,000đ) trị g
+- "url" — vd: https://www.dienmayxanh.com/man-hinh-may-tinh/gigabyte-gs27f
+- "ảnh" — vd: https://cdnv2.tgdd.vn/mwg-static/tgdd/Products/Images/5697/3
+- "price_promo_clean" — vd: 2990000.0
 - "capacity_clean"
 
 ## Bảng "may_giat" — ngành "Máy giặt" (1337 dòng)
@@ -118,16 +143,14 @@
 - "brand_id" — vd: 315.0
 - "brand" — vd: Electrolux
 - "Sản xuất tại" — vd: Việt Nam
-- "Thời gian ra mắt" — vd: 2014
+- "Thời gian ra mắt" — vd: 2014.0
 - "Điện năng tiêu thụ" — vd: 34.7 Wh/kg
 - "Chất liệu thân vỏ" — vd: Kim loại sơn tĩnh điện
 - "Số người sử dụng" — vd: Từ 3 - 5 người (8 - 9 kg)
 - "Tiện ích" — vd: Khử mùi kháng khuẩn | Tự khởi động lại khi có điện | Khóa tr
-- "Cao" — vd: 51.7
 - "Ngang" — vd: 59
 - "Sâu" — vd: 62
 - "Khối lượng máy" — vd: 6,3
-- "Số lượng" — vd: Không
 - "Loại Inverter" — vd: Không có
 - "Bảo hành động cơ" — vd: 5 năm
 - "Loại sản phẩm" — vd: Cửa trên
@@ -146,6 +169,17 @@
 - "giá gốc" — vd: 18640000.0
 - "giá khuyến mãi" — vd: 13190000.0
 - "khuyến mãi quà" — vd: Cơ hội trúng tủ chăm sóc quần áo trị giá 58 triệu đồng. (Xem
+- "Điện năng tiêu thụ (nguyên văn)" — vd: 4.7 Wh/kg
+- "search_description" — vd: Nhóm sản phẩm: Máy giặt; Nhãn hàng: Electrolux
+- "tên sản phẩm" — vd: Máy giặt sấy Toshiba Inverter giặt 10.5 kg - sấy 7 kg TWD-T2
+- "giá hiệu lực" — vd: 13190000.0
+- "nguồn giá" — vd: crawl dienmayxanh, ngày 2026-07-17
+- "rating" — vd: 4.9
+- "lượt bán" — vd: 421.0
+- "bảo hành" — vd: Kèm theo máy có: Ống dẫn nước, Sách hướng dẫn; Bảo hành chín
+- "khuyến mãi" — vd: Chọn 1 KM: Phiếu mua hàng Gia dụng, Xe đạp trị giá 200,000đ
+- "url" — vd: https://www.dienmayxanh.com/may-giat/may-giat-say-toshiba-in
+- "ảnh" — vd: https://cdn.tgdd.vn/2026/07/timerseo/321754.jpg
 - "price_promo_clean" — vd: 13190000.0
 - "capacity_clean" — vd: 9.0
 
@@ -169,7 +203,7 @@
 - "Cao" — vd: 240
 - "Chất lượng in (độ nét)" — vd: 1200 x 1200 dpi (In trắng đen) - 4800 x 1200 dpi (In màu)
 - "Thời gian chu kỳ" — vd: 14 giây (Đen trắng) - 16 giây (Màu)
-- "Tốc độ in" — vd: 23 trang/phút (Đen trắng) - 22 trang/phút (Màu) (In nháp) | 
+- "Tốc độ in" — vd: 23 trang/phút (Đen trắng) - 22 trang/phút (Màu) (In nháp) |
 - "Công suất theo nghiệp vụ" — vd: 400-800 trang/tháng
 - "Loại mực in" — vd: HP GT53 1VV22AA Đen | HP GT52 M0H54AA Xanh dương | HP GT52 M
 - "Công nghệ" — vd: Wi-Fi Direct | HP Smart App | Apple AirPrint
@@ -179,13 +213,27 @@
 - "Khay nạp giấy" — vd: 250 tờ
 - "Khổ giấy" — vd: Không
 - "CPU tương thích" — vd: AMD | ARM 64 | Intel
-- "Công suất đầu ra" — vd: Hãng không công bố
+- "Công suất đầu ra" — vd: 900 W
 - "Loại sản phẩm" — vd: In phun màu
 - "Loại giấy in 2 mặt" — vd: Không
 - "giá gốc" — vd: 8190000.0
 - "giá khuyến mãi" — vd: 4590000.0
 - "khuyến mãi quà" — vd: Phiếu mua hàng giảm 10% tối đa 300,000đ mua đèn năng lượng m
-- "price_promo_clean" — vd: 4590000.0
+- "Hiệu suất mực đi kèm" — vd: Khoảng 6000 trang (Trắng đen) - 8000 trang (Màu)
+- "Khổ giấy hỗ trợ" — vd: A4 | A6 | DL | C6 | B5 (JIS) | Thẻ Hagaki | Chou #3 | c5 | T
+- "Tốc độ in đen trắng" — vd: 23 trang/phút
+- "Tốc độ in màu" — vd: 22 trang/phút
+- "search_description" — vd: Nhóm sản phẩm: Máy in; Nhãn hàng: Hp; Loại sản phẩm: In phun
+- "tên sản phẩm" — vd: Máy in phun màu đa năng HP Smart Tank 750 Wifi (6UU47A)
+- "giá hiệu lực" — vd: 7990000.0
+- "nguồn giá" — vd: crawl dienmayxanh, ngày 2026-07-17
+- "rating" — vd: 5.0
+- "lượt bán" — vd: 44.0
+- "bảo hành" — vd: Bộ bán hàng chuẩn: Dây nguồn, Bình mực ( 4 màu ), Sách hướng
+- "khuyến mãi" — vd: Chọn 1 KM: Tặng Mực in phun HP GT52 Magenta Original Ink Bot
+- "url" — vd: https://www.dienmayxanh.com/may-in/hp-smart-tank-750-wifi-6u
+- "ảnh" — vd: https://cdnv2.tgdd.vn/mwg-static/tgdd/Products/Images/5693/3
+- "price_promo_clean" — vd: 7990000.0
 - "capacity_clean"
 
 ## Bảng "may_lanh" — ngành "Máy lạnh" (1039 dòng)
@@ -197,10 +245,8 @@
 - "brand" — vd: Panasonic
 - "Công nghệ làm lạnh" — vd: Powerful
 - "Sản xuất tại" — vd: Malaysia
-- "Điện năng tiêu thụ" — vd: 1
 - "Công nghệ tiết kiệm điện" — vd: Inverter | ECO tích hợp A.I
 - "Tiện ích" — vd: Nắp dàn lạnh có thể tháo rời, dễ dàng vệ sinh | Hẹn giờ bật,
-- "Khối lượng máy" — vd: 19.0
 - "Bảo hành bộ phận" — vd: 1 năm
 - "Loại máy" — vd: Máy lạnh 1 chiều (chỉ làm lạnh)
 - "Công suất đầu ra" — vd: Không
@@ -208,10 +254,8 @@
 - "Dài ống đồng" — vd: Tối thiểu 3m - Tối đa 30m
 - "Cao lắp đặt" — vd: 20m
 - "Chất liệu dàn tản nhiệt" — vd: Ống dẫn gas bằng Đồng - Lá tản nhiệt bằng Nhôm phủ BlueFin
-- "Độ ồn" — vd: Dàn lạnh: 45/34/29 dB - Dàn nóng: 51 dB
-- "Dòng điện vào" — vd: Dàn nóng hoặc dàn lạnh
+- "Độ ồn" — vd: 29 dB
 - "Kích thước ống đồng" — vd: 6/12
-- "Số lượng" — vd: Khoảng 7000 trang A4
 - "Dài phụ kiện chính" — vd: 106
 - "Độ dày phụ kiện chính" — vd: 24
 - "Khối lượng phụ kiện chính" — vd: 12
@@ -228,13 +272,23 @@
 - "Loại Gas" — vd: R-32
 - "Bảo hành động cơ" — vd: Máy nén 12 năm
 - "Cao phụ kiện chính" — vd: 29
-- "Cao phụ kiện chính 2" — vd: Không
-- "Dài phụ kiện chính 2" — vd: 74.0
-- "Độ dày phụ kiện chính 2" — vd: 27.0
 - "giá gốc" — vd: 29490000.0
 - "giá khuyến mãi" — vd: 16790000.0
 - "khuyến mãi quà" — vd: Phiếu mua hàng Máy lọc không khí/Hút bụi trị giá 300,000đ áp
-- "price_promo_clean" — vd: 16790000.0
+- "Độ ồn (nguyên văn)" — vd: Dàn lạnh: 45/34/29 dB - Dàn nóng: 51 dB
+- "Nhãn năng lượng (sao)" — vd: 5.0
+- "Hiệu suất năng lượng" — vd: 6.23
+- "search_description" — vd: Nhóm sản phẩm: Máy lạnh; Nhãn hàng: Panasonic; Công nghệ làm
+- "tên sản phẩm" — vd: Máy lạnh Panasonic Inverter 2.5 HP CU/CS-PU24CKH-8D
+- "giá hiệu lực" — vd: 29490000.0
+- "nguồn giá" — vd: crawl dienmayxanh, ngày 2026-07-17
+- "rating" — vd: 5.0
+- "lượt bán" — vd: 164.0
+- "bảo hành" — vd: Bảo hành remote 1 năm (không áp dụng bảo hành tại nhà), máy
+- "khuyến mãi" — vd: Phiếu mua hàng Máy lọc không khí/Hút bụi trị giá 300,000đ áp
+- "url" — vd: https://www.dienmayxanh.com/may-lanh/panasonic-inverter-25-h
+- "ảnh" — vd: https://cdnv2.tgdd.vn/mwg-static/dmx/Products/Images/2002/36
+- "price_promo_clean" — vd: 29490000.0
 - "capacity_clean"
 
 ## Bảng "may_nuoc_nong" — ngành "Máy nước nóng" (319 dòng)
@@ -245,14 +299,13 @@
 - "brand_id" — vd: 355.0
 - "brand" — vd: Stiebel Eltron
 - "Sản xuất tại" — vd: Thái Lan
-- "Chất liệu thân vỏ" — vd: Đang cập nhật
 - "Tiện ích" — vd: Thanh nhiệt bằng đồng làm nóng nhanh, bền bỉ | Van điều chỉn
 - "Cao" — vd: 34.0
 - "Khối lượng máy" — vd: 2
 - "Loại máy" — vd: Làm nóng trực tiếp
 - "Công suất đầu ra" — vd: 4500W
 - "Số lượng" — vd: Không
-- "Dòng sản phẩm" — vd: 2025
+- "Dòng sản phẩm" — vd: 2025.0
 - "Chất liệu ruột" — vd: Không
 - "Thương hiệu của" — vd: Đức
 - "Tính năng an toàn" — vd: Công tắc dòng chảy | Cầu dao chống rò điện ELCB | Bộ ổn định
@@ -276,7 +329,18 @@
 - "giá gốc" — vd: 4790000.0
 - "giá khuyến mãi" — vd: 3917455.0
 - "khuyến mãi quà" — vd: Phiếu mua hàng giảm 10% tối đa 300,000đ mua đèn năng lượng m
-- "price_promo_clean" — vd: 3917455.0
+- "Số người sử dụng" — vd: 4 - 5 người
+- "search_description" — vd: Nhóm sản phẩm: Máy nước nóng; Nhãn hàng: Stiebel Eltron; Tín
+- "tên sản phẩm" — vd: Máy nước nóng trực tiếp Stiebel Eltron 4500W XP 45 EC
+- "giá hiệu lực" — vd: 3590000.0
+- "nguồn giá" — vd: crawl dienmayxanh, ngày 2026-07-17
+- "rating" — vd: 5.0
+- "lượt bán" — vd: 887.0
+- "bảo hành" — vd: Hư gì đổi nấy 12 tháng tận nhà (miễn phí tháng đầu) Xem chi
+- "khuyến mãi" — vd: Phiếu mua hàng giảm 10% tối đa 300,000đ mua đèn năng lượng m
+- "url" — vd: https://www.dienmayxanh.com/may-nuoc-nong/may-nuoc-nong-truc
+- "ảnh" — vd: https://cdnv2.tgdd.vn/mwg-static/dmx/Products/Images/1962/34
+- "price_promo_clean" — vd: 3590000.0
 - "capacity_clean"
 
 ## Bảng "may_rua_chen" — ngành "Máy rửa chén" (134 dòng)
@@ -296,11 +360,11 @@
 - "Công suất đầu ra" — vd: 2400W
 - "Độ ồn" — vd: 46 dB
 - "Số lượng" — vd: 4 - 5 bữa ăn Việt (13 bộ châu Âu)
-- "Dòng sản phẩm" — vd: 2025
+- "Dòng sản phẩm" — vd: 2025.0
 - "Loại sản phẩm" — vd: Máy rửa chén độc lập
 - "Bảng điều khiển" — vd: Nút nhấn
-- "Công nghệ" — vd: Công nghệ rửa diệt khuẩn Hygiene Plus | Hỗ trợ hòa tan viên 
-- "Công nghệ sấy" — vd: Heat Exchanger + Drying assist (nhiệt có sẵn + sấy hỗ trợ - 
+- "Công nghệ" — vd: Công nghệ rửa diệt khuẩn Hygiene Plus | Hỗ trợ hòa tan viên
+- "Công nghệ sấy" — vd: Heat Exchanger + Drying assist (nhiệt có sẵn + sấy hỗ trợ -
 - "Chương trình" — vd: Rửa chuyên sâu | Ghi nhớ chương trình (chương trình yêu thíc
 - "Dài ống cấp nước" — vd: 165
 - "Dài ống xả nước" — vd: 190
@@ -310,6 +374,18 @@
 - "giá gốc" — vd: 19990000.0
 - "giá khuyến mãi" — vd: 14990000.0
 - "khuyến mãi quà" — vd: Cơ hội trúng tủ chăm sóc quần áo trị giá 58 triệu đồng. (Xem
+- "Số bộ chén" — vd: 13 bộ
+- "Số bữa ăn Việt" — vd: 4 - 5 bữa
+- "search_description" — vd: Nhóm sản phẩm: Máy rửa chén; Nhãn hàng: Bosch; Tiện ích: Điề
+- "tên sản phẩm" — vd: Máy rửa chén độc lập Haier HDWA18-686BK3VN
+- "giá hiệu lực" — vd: 14990000.0
+- "nguồn giá" — vd: crawl dienmayxanh, ngày 2026-07-17
+- "rating" — vd: 5.0
+- "lượt bán" — vd: 64.0
+- "bảo hành" — vd: Bộ bán hàng chuẩn: Ống cấp nước, Dây điện nguồn; Hư gì đổi n
+- "khuyến mãi" — vd: Chọn 1 KM: Phiếu mua hàng Gia dụng, MLN, Xe đạp trị giá 500.
+- "url" — vd: https://www.dienmayxanh.com/may-rua-chen/may-rua-chen-doc-la
+- "ảnh" — vd: https://cdn.tgdd.vn/2026/07/timerseo/360563.jpg
 - "price_promo_clean" — vd: 14990000.0
 - "capacity_clean"
 
@@ -325,7 +401,7 @@
 - "Chất liệu thân vỏ" — vd: Kim loại phủ sơn (PCM)
 - "Số người sử dụng" — vd: Từ 1 - 2 người (Dưới 4 kg)
 - "Công nghệ tiết kiệm điện" — vd: Không có
-- "Tiện ích" — vd: Khử trùng bằng tia cực tím | Kiểm soát nhiệt độ với 2 luồng 
+- "Tiện ích" — vd: Khử trùng bằng tia cực tím | Kiểm soát nhiệt độ với 2 luồng
 - "Cao" — vd: 48
 - "Ngang" — vd: 40
 - "Sâu" — vd: 56
@@ -336,7 +412,7 @@
 - "Khối lượng tải chính" — vd: 4
 - "Công nghệ" — vd: Steam Refresh sấy hơi nước làm mới quần áo | Công nghệ Aller
 - "Chất liệu ruột" — vd: Thép không gỉ
-- "Động cơ" — vd: Hãng không công bố
+- "Động cơ" — vd: Truyền động gián tiếp (Dây curoa)
 - "Dài ống xả nước" — vd: Không
 - "Nhiệt độ tối đa" — vd: 60°C
 - "Dài ống thoát khí" — vd: 13
@@ -345,6 +421,18 @@
 - "giá gốc" — vd: 5990000.0
 - "giá khuyến mãi" — vd: 5990000.0
 - "khuyến mãi quà" — vd: Cơ hội trúng tủ chăm sóc quần áo trị giá 58 triệu đồng. (Xem
+- "Công suất" — vd: 800W
+- "Công suất (nguyên văn)" — vd: 4725W
+- "search_description" — vd: Nhóm sản phẩm: Máy sấy quần áo; Nhãn hàng: Lumias; Loại sản
+- "tên sản phẩm" — vd: Máy sấy bơm nhiệt Hisense 8 kg DH80N1T
+- "giá hiệu lực" — vd: 5990000.0
+- "nguồn giá" — vd: thông số nhà sản xuất
+- "rating" — vd: 5.0
+- "lượt bán" — vd: 37.0
+- "bảo hành" — vd: Kèm theo máy có: Sách hướng dẫn; Hư gì đổi nấy 12 tháng tận
+- "khuyến mãi" — vd: Chọn 1 KM: Phiếu Mua hàng Gia dụng, Xe đạp trị giá 100,000đ
+- "url" — vd: https://www.dienmayxanh.com/may-say-quan-ao/may-say-bom-nhie
+- "ảnh" — vd: https://cdn.tgdd.vn/2026/07/timerseo/362155.jpg
 - "price_promo_clean" — vd: 5990000.0
 - "capacity_clean" — vd: 4.0
 
@@ -362,7 +450,6 @@
 - "Thời gian ra mắt" — vd: 09/2025
 - "Màn hình hiển thị" — vd: IPS LCD
 - "Kích thước màn hình" — vd: 8.7"
-- "Độ phân giải" — vd: 1200 x 1920 Pixels
 - "Dài" — vd: 211.0
 - "Ngang" — vd: 124.0
 - "Dày" — vd: 7
@@ -379,14 +466,14 @@
 - "Chip đồ họa (GPU)" — vd: Adreno 610
 - "Bluetooth" — vd: v5.0
 - "Cổng tai nghe, headphone" — vd: Type-C
-- "Tính năng đặc biệt" — vd: Mở khóa bằng khuôn mặt | Khoanh tròn để tìm kiếm với Google 
+- "Tính năng đặc biệt" — vd: Mở khóa bằng khuôn mặt | Khoanh tròn để tìm kiếm với Google
 - "Ghi âm" — vd: Có
 - "Radio" — vd: Không có
 - "Loại pin" — vd: Li-Ion
 - "Công nghệ pin" — vd: Tiết kiệm pin
 - "Hỗ trợ sạc tối đa" — vd: 18 W
 - "Dung lượng lưu trữ" — vd: 64 GB
-- "Dung lượng khả dụng" — vd: 49
+- "Dung lượng khả dụng" — vd: 49 GB
 - "Quay phim" — vd: FullHD 1080p@30fps
 - "Tính năng camera sau" — vd: Xóa phông | Tự động lấy nét | Đèn Flash
 - "Tính năng camera trước" — vd: Xóa phông
@@ -395,7 +482,21 @@
 - "giá gốc" — vd: 3290000.0
 - "giá khuyến mãi" — vd: 2740000.0
 - "khuyến mãi quà" — vd: Phiếu mua hàng giảm 10% tối đa 300,000đ mua đèn năng lượng m
-- "price_promo_clean" — vd: 2740000.0
+- "Sạc kèm theo" — vd: 10 W
+- "Pin (mAh)" — vd: 6000 mAh
+- "Pin (Wh)" — vd: 36.59 Wh
+- "Dung lượng khả dụng (nguyên văn)" — vd: 2033.0
+- "search_description" — vd: Nhóm sản phẩm: Máy tính bảng; Nhãn hàng: Honor; Tính năng ca
+- "tên sản phẩm" — vd: Máy tính bảng HONOR Pad X7 WiFi 4GB/64GB
+- "giá hiệu lực" — vd: 3190000.0
+- "nguồn giá" — vd: crawl dienmayxanh, ngày 2026-07-17
+- "rating" — vd: 4.9
+- "lượt bán" — vd: 1700.0
+- "bảo hành" — vd: Hư gì đổi nấy 12 tháng tại 2984 siêu thị toàn quốc (miễn phí
+- "khuyến mãi" — vd: Ốp lưng HONOR Pad X7 Đen(Hết quà hoàn tiền 100.000₫); Cơ hội
+- "url" — vd: https://www.dienmayxanh.com/may-tinh-bang/honor-pad-x7-wifi-
+- "ảnh" — vd: https://cdnv2.tgdd.vn/mwg-static/tgdd/Products/Images/522/34
+- "price_promo_clean" — vd: 3190000.0
 - "capacity_clean"
 
 ## Bảng "may_tinh_de_ban" — ngành "Máy tính để bàn" (405 dòng)
@@ -445,7 +546,7 @@
 - "Tản nhiệt RAM" — vd: Không
 - "Ổ cứng" — vd: 512 GB SSD M.2 NVMe
 - "Chuẩn kết nối ổ cứng" — vd: Không
-- "Khe cắm mở rộng" — vd: 1 x Khe cắm M.2 SATA/NVMe hỗ trợ PCIe 3.0 (Tối đa 4 TB) | 1 
+- "Khe cắm mở rộng" — vd: 1 x Khe cắm M.2 SATA/NVMe hỗ trợ PCIe 3.0 (Tối đa 4 TB) | 1
 - "Màn hình cảm ứng" — vd: Không
 - "Thiết kế card" — vd: Card đồ hoạ tích hợp
 - "Công nghệ âm thanh" — vd: Intel Smart Sound | Không
@@ -474,7 +575,19 @@
 - "giá gốc" — vd: 18000000.0
 - "giá khuyến mãi" — vd: 14390000.0
 - "khuyến mãi quà" — vd: Phiếu mua hàng giảm 10% tối đa 300,000đ mua đèn năng lượng m
-- "price_promo_clean" — vd: 14390000.0
+- "Loại hàng" — vd: máy hoàn chỉnh
+- "Tốc độ CPU (nguyên văn)" — vd: 120 GB/s memory bandwidth
+- "search_description" — vd: Nhóm sản phẩm: Máy tính để bàn; Nhãn hàng: Singpc; Công nghệ
+- "tên sản phẩm" — vd: MiniPC SingPC NUC U512U695-W Ultra 5 125U/16GB/512GB/Win11Pr
+- "giá hiệu lực" — vd: 16490000.0
+- "nguồn giá" — vd: crawl dienmayxanh, ngày 2026-07-17
+- "rating" — vd: 5.0
+- "lượt bán" — vd: 15.0
+- "bảo hành" — vd: Bộ bán hàng chuẩn: Dây nguồn, Adapter sạc; Hư gì đổi nấy 12
+- "khuyến mãi" — vd: Phiếu mua hàng Bộ lưu điện trị giá 500.000đ; Phiếu mua hàng
+- "url" — vd: https://www.dienmayxanh.com/may-tinh-nguyen-bo/minipc-singpc
+- "ảnh" — vd: https://cdnv2.tgdd.vn/mwg-static/tgdd/Products/Images/5698/3
+- "price_promo_clean" — vd: 16490000.0
 - "capacity_clean"
 
 ## Bảng "micro_karaoke" — ngành "Micro karaoke" (37 dòng)
@@ -493,6 +606,18 @@
 - "giá gốc" — vd: 9720000.0
 - "giá khuyến mãi" — vd: 9720000.0
 - "khuyến mãi quà" — vd: Miễn phí công lắp đặt
+- "Băng tần RF" — vd: 640 - 690 MHz
+- "Dải tần âm thanh" — vd: 50 Hz - 15000 Hz
+- "search_description" — vd: Nhóm sản phẩm: Micro karaoke; Nhãn hàng: Alpha Works; Loại s
+- "tên sản phẩm"
+- "giá hiệu lực" — vd: 9720000.0
+- "nguồn giá" — vd: thông số nhà sản xuất
+- "rating"
+- "lượt bán"
+- "bảo hành"
+- "khuyến mãi"
+- "url"
+- "ảnh"
 - "price_promo_clean" — vd: 9720000.0
 - "capacity_clean"
 
@@ -541,6 +666,16 @@
 - "giá gốc" — vd: 2345000.0
 - "giá khuyến mãi" — vd: 2150000.0
 - "khuyến mãi quà" — vd: Phiếu mua hàng mua Pin tiểu (đơn hàng từ 80.000đ trở lên) tr
+- "search_description" — vd: Nhóm sản phẩm: Micro thu âm điện thoại; Nhãn hàng: Boya; Loạ
+- "tên sản phẩm" — vd: Micro không dây BOYA LINK
+- "giá hiệu lực" — vd: 2150000.0
+- "nguồn giá" — vd: crawl dienmayxanh, ngày 2026-07-17
+- "rating" — vd: 5.0
+- "lượt bán" — vd: 139.0
+- "bảo hành" — vd: Bảo hành có cam kết 12 tháng tại 2984 siêu thị toàn quốc Xem
+- "khuyến mãi" — vd: Phiếu mua hàng mua Pin tiểu (đơn hàng từ 80.000đ trở lên) tr
+- "url" — vd: https://www.dienmayxanh.com/micro-thu-am/micro-khong-day-boy
+- "ảnh" — vd: https://cdnv2.tgdd.vn/mwg-static/tgdd/Products/Images/12498/
 - "price_promo_clean" — vd: 2150000.0
 - "capacity_clean"
 
@@ -565,7 +700,7 @@
 - "Dung tích sử dụng" — vd: 307 lít
 - "Công nghệ tiết kiệm điện" — vd: Digital Inverter
 - "Công nghệ bảo quản thực phẩm" — vd: Ngăn đông mềm -1 độ C Optimal Fresh Zone
-- "Tiện ích" — vd: Hệ thống làm đá tự động Auto Ice Maker | Lấy nước bên ngoài 
+- "Tiện ích" — vd: Hệ thống làm đá tự động Auto Ice Maker | Lấy nước bên ngoài
 - "Chất liệu động cơ" — vd: Ống dẫn gas bằng Đồng và Nhôm - Lá tản nhiệt bằng Nhôm
 - "Dung tích ngăn chuyển đổi" — vd: Không có
 - "Số cửa" — vd: 2 cánh
@@ -578,7 +713,18 @@
 - "giá gốc" — vd: 14990000.0
 - "giá khuyến mãi" — vd: 10990000.0
 - "khuyến mãi quà" — vd: Phiếu mua hàng Máy lọc không khí/Hút bụi trị giá 300,000đ áp
-- "price_promo_clean" — vd: 10990000.0
+- "Điện năng tiêu thụ (nguyên văn)" — vd: 57618
+- "search_description" — vd: Nhóm sản phẩm: Tủ Lạnh; Nhãn hàng: Samsung; Kiểu dáng: Ngăn
+- "tên sản phẩm" — vd: Tủ lạnh Samsung Inverter 307 lít RB30N4190B1/SV
+- "giá hiệu lực" — vd: 13640000.0
+- "nguồn giá" — vd: crawl dienmayxanh, ngày 2026-07-17
+- "rating" — vd: 5.0
+- "lượt bán" — vd: 1400.0
+- "bảo hành" — vd: Bảo hành máy nén 10 năm (sản phẩm kích hoạt từ 01/04/2026).
+- "khuyến mãi" — vd: Chọn 1 KM: Phiếu mua hàng Gia dụng, Xe đạp cho đơn từ 500,00
+- "url" — vd: https://www.dienmayxanh.com/tu-lanh/tu-lanh-samsung-inverter
+- "ảnh" — vd: https://cdn.tgdd.vn/2026/07/timerseo/358160.jpg
+- "price_promo_clean" — vd: 13640000.0
 - "capacity_clean" — vd: 313.0
 
 ## Bảng "tu_mat_tu_dong" — ngành "Tủ mát, tủ đông" (222 dòng)
@@ -589,7 +735,7 @@
 - "brand_id" — vd: 184
 - "brand" — vd: Hoà Phát
 - "Sản xuất tại" — vd: Việt Nam
-- "Thời gian ra mắt" — vd: 2025
+- "Thời gian ra mắt" — vd: 2025.0
 - "Dung tích tổng" — vd: 300 lít
 - "Điện năng tiêu thụ" — vd: 2.85 kWh/ngày
 - "Công nghệ tiết kiệm điện" — vd: Không có
@@ -600,7 +746,7 @@
 - "Ngang" — vd: 63
 - "Sâu" — vd: 61
 - "Khối lượng máy" — vd: 64
-- "Độ ồn" — vd: < 42 dB
+- "Độ ồn" — vd: 42 dB
 - "Loại Gas" — vd: R600a
 - "Loại sản phẩm" — vd: Tủ mát
 - "Chất liệu mặt" — vd: Công nghệ kính Low-E
@@ -612,6 +758,18 @@
 - "Nhiệt độ ngăn đông (độ C)" — vd: 0 - 10°C
 - "giá gốc" — vd: 10300000.0
 - "giá khuyến mãi" — vd: 2990000.0
-- "khuyến mãi quà" — vd: Phiếu mua hàng Máy lọc nước Sanaky trị giá 500,000đ | Phiếu 
-- "price_promo_clean" — vd: 2990000.0
+- "khuyến mãi quà" — vd: Phiếu mua hàng Máy lọc nước Sanaky trị giá 500,000đ | Phiếu
+- "Độ ồn (nguyên văn)" — vd: < 42 dB
+- "Điện năng tiêu thụ (nguyên văn)" — vd: 402 kWh/năm
+- "search_description" — vd: Nhóm sản phẩm: Tủ mát, tủ đông; Nhãn hàng: Hoà Phát; Loại sả
+- "tên sản phẩm" — vd: Tủ mát 2 cánh Hòa Phát 280 lít HSR S6280.Z
+- "giá hiệu lực" — vd: 9450000.0
+- "nguồn giá" — vd: crawl dienmayxanh, ngày 2026-07-17
+- "rating" — vd: 4.9
+- "lượt bán" — vd: 73.0
+- "bảo hành" — vd: Hư gì đổi nấy 12 tháng tận nhà (miễn phí tháng đầu) Xem chi
+- "khuyến mãi" — vd: Chọn 1 KM: Phiếu mua hàng GIA DỤNG,MÁY LỌC NƯỚC,XE ĐẠP trị g
+- "url" — vd: https://www.dienmayxanh.com/tu-dong/tu-mat-hoa-phat-280-lit-
+- "ảnh" — vd: https://cdn.tgdd.vn/Products/Images/166/362701/TimerThumb/36
+- "price_promo_clean" — vd: 9450000.0
 - "capacity_clean" — vd: 300.0

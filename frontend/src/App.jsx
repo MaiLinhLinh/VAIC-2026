@@ -50,7 +50,7 @@ export default function App() {
           }
         },
       })
-      const finalMsg = { role: 'bot', text: res.reply, recommendation: res.recommendation }
+      const finalMsg = { role: 'bot', text: res.reply, recommendation: res.recommendation, trace: res.trace }
       if (streamed) replaceLast(finalMsg)
       else setMessages((m) => [...m, finalMsg])
     } catch (e) {
@@ -58,7 +58,7 @@ export default function App() {
         // Stream endpoint unreachable — turn not processed yet, safe to retry once via sync API.
         try {
           const res = await sendChat(SID, text)
-          setMessages((m) => [...m, { role: 'bot', text: res.reply, recommendation: res.recommendation }])
+          setMessages((m) => [...m, { role: 'bot', text: res.reply, recommendation: res.recommendation, trace: res.trace }])
         } catch {
           setMessages((m) => [...m, { role: 'bot', text: 'Xin lỗi, hệ thống đang bận. Anh/chị thử lại nhé.' }])
         }

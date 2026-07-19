@@ -40,6 +40,12 @@ class Product(BaseModel):
     spec_doc: str = ""
     promo_text: str | None = None
     productidweb: str | None = None
+    rating: SourcedValue = Field(default_factory=SourcedValue.missing)
+    quantity_sold: SourcedValue = Field(default_factory=SourcedValue.missing)
+    warranty: SourcedValue = Field(default_factory=SourcedValue.missing)
+    url: str | None = None
+    image_url: str | None = None
+    crawl_promotion: str | None = None
     raw: dict[str, Any] = Field(default_factory=dict)
     rating: SourcedValue = Field(default_factory=SourcedValue.missing)
     quantity_sold: SourcedValue = Field(default_factory=SourcedValue.missing)

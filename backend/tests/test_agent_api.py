@@ -31,7 +31,13 @@ def test_chat_agent_core_shape():
         r = client.post("/api/chat", json={"session_id": "a1", "message": "mua tủ lạnh 20tr"})
         assert r.status_code == 200
         body = r.json()
-        assert set(body) == {"reply", "stage", "question", "need", "recommendation"}
+        assert set(body) == {"reply", "stage", "question", "need", "recommendation", "trace"}
+        assert [item["step"] for item in body["trace"]] == ["intent", "dialogue", "retrieval", "timing"]
+        retrieval_trace = body["trace"][2]["data"]
+        assert retrieval_trace["status"] in {"exact_match", "scored_match"}
+        assert retrieval_trace["total_matches_found"] == 2
+        assert retrieval_trace["description_search"]["column"] == "search_description"
+        assert isinstance(retrieval_trace["candidate_params"], list)
         assert body["recommendation"]["comparison"] is not None
     finally:
         app.dependency_overrides.clear()

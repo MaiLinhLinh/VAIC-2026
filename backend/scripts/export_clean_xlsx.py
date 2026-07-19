@@ -8,11 +8,16 @@ xuất từ làm sạch, cuối cùng là khối cột enrichment "(crawl)".
 import os
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import pandas as pd
 from openpyxl import Workbook
 
-from app.catalog.category_config import CATEGORY_CONFIGS
-from app.catalog.enrich import enrich_products, load_crawl_records
-from app.catalog.normalize import build_catalog_with_report
+from app.catalog.clean_rules import clean_sheet
+from app.catalog.enrich import load_crawl_records
+from app.agent_core.search_description import (
+    DESCRIPTION_COLUMN,
+    build_search_description,
+    select_description_fields,
+)
 from app.config import get_settings
 
 _CRAWL_COLS = [
@@ -21,57 +26,82 @@ _CRAWL_COLS = [
 ]
 
 
-def _crawl_values(p) -> dict:
-    prov = p.price.provenance
-    src = None
-    if p.price.available and prov:
-        src = prov.source + (f" ({prov.detail})" if prov.detail else "")
-        if prov.as_of:
-            src += f", ngày {prov.as_of}"
+def _key(value) -> str | None:
+    text = str(value).strip() if value is not None else ""
+    if text.endswith(".0"):
+        text = text[:-2]
+    if not text or text.lower() in {"nan", "none", "null"} or set(text) == {"9"}:
+        return None
+    return text
+
+
+def _crawl_values(row: dict, crawl: dict | None) -> dict:
+    original = crawl.get("original_price") if crawl else None
+    sale = crawl.get("sale_price") if crawl else None
+    sale_valid = sale and (not original or sale <= original)
+    effective = sale if sale_valid else original
+    source = None
+    if effective:
+        source = "crawl dienmayxanh"
+        as_of = str(crawl.get("crawled_at") or "")[:10]
+        if as_of:
+            source += f", ngày {as_of}"
+    else:
+        effective = row.get("giá khuyến mãi") or row.get("giá gốc")
+        if effective:
+            source = "thông số nhà sản xuất"
     return {
-        "tên sản phẩm": p.display_name if "display_name_tong_hop" in p.raw else None,
-        "giá hiệu lực": p.price.value if p.price.available else None,
-        "nguồn giá": src,
-        "rating": p.rating.value if p.rating.available else None,
-        "lượt bán": p.quantity_sold.value if p.quantity_sold.available else None,
-        "bảo hành": p.warranty.value if p.warranty.available else None,
-        "khuyến mãi": p.crawl_promotion,
-        "url": p.url,
-        "ảnh": p.image_url,
+        "tên sản phẩm": crawl.get("name") if crawl else None,
+        "giá hiệu lực": effective,
+        "nguồn giá": source,
+        "rating": crawl.get("rating") if crawl else None,
+        "lượt bán": crawl.get("quantity_sold") if crawl else None,
+        "bảo hành": crawl.get("warranty_policy") if crawl else None,
+        "khuyến mãi": crawl.get("promotion") if crawl else None,
+        "url": crawl.get("url") if crawl else None,
+        "ảnh": crawl.get("image_url") if crawl else None,
     }
 
 
 def main():
     s = get_settings()
-    products, _ = build_catalog_with_report(s.dataset_path)
     crawl_records = load_crawl_records(s.crawl_cleaned_path, s.crawl_path)
-    if crawl_records:
-        enrich_products(products, crawl_records)
-
-    by_code: dict[str, list] = {}
-    for p in products:
-        by_code.setdefault(p.category_code, []).append(p)
+    crawl_by_pid = {_key(row.get("product_id")): row for row in crawl_records
+                    if _key(row.get("product_id"))}
+    crawl_by_code = {_key(row.get("product_code")): row for row in crawl_records
+                     if _key(row.get("product_code"))}
 
     wb = Workbook()
     wb.remove(wb.active)
-    for cfg in CATEGORY_CONFIGS.values():
-        ws = wb.create_sheet(title=cfg.sheet_name)
-        rows = by_code.get(cfg.code, [])
+    xls = pd.ExcelFile(s.spec_source_path)
+    total = 0
+    for sheet_name in xls.sheet_names:
+        source_rows = pd.read_excel(xls, sheet_name=sheet_name).to_dict(orient="records")
+        rows, _ = clean_sheet(sheet_name, source_rows)
+        ws = wb.create_sheet(title=sheet_name)
         # thứ tự cột: theo dòng gốc, cột dẫn xuất mới gặp nối vào sau
         headers: list[str] = []
-        for p in rows:
-            for k in p.raw:
+        for row in rows:
+            for k in row:
                 if k not in headers and k != "display_name_tong_hop":
                     headers.append(k)
-        headers += _CRAWL_COLS
+        description_fields = select_description_fields(rows)
+        headers += [DESCRIPTION_COLUMN, *_CRAWL_COLS]
         ws.append(headers)
-        for p in rows:
-            extra = _crawl_values(p)
-            ws.append([p.raw.get(h) if h not in extra else extra[h] for h in headers])
+        for row in rows:
+            pid = _key(row.get("productidweb"))
+            sku = _key(row.get("sku"))
+            crawl = (crawl_by_pid.get(pid) if pid else None) or crawl_by_code.get(sku)
+            extra = _crawl_values(row, crawl)
+            extra[DESCRIPTION_COLUMN] = build_search_description(
+                sheet_name, str(row.get("brand") or row.get("brand_id") or ""),
+                row, description_fields
+            )
+            ws.append([row.get(h) if h not in extra else extra[h] for h in headers])
+        total += len(rows)
 
     out = os.path.join(os.path.dirname(s.catalog_path), "Spec_cate_gia.cleaned.xlsx")
     wb.save(out)
-    total = sum(len(v) for v in by_code.values())
     print(f"Da xuat {total} dong / {len(wb.sheetnames)} sheet -> {out}")
 
 

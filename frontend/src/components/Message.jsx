@@ -4,6 +4,40 @@ import remarkGfm from 'remark-gfm'
 import ComparisonTable from './ComparisonTable'
 import ContextualSuggestions from './ContextualSuggestions'
 
+function TraceValue({ value }) {
+  if (value == null || value === '') return <span className="trace-empty">null</span>
+  if (typeof value === 'boolean') return <span>{value ? 'true' : 'false'}</span>
+  if (typeof value === 'object') return <pre>{JSON.stringify(value, null, 2)}</pre>
+  return <span>{String(value)}</span>
+}
+
+function RetrievalTrace({ trace }) {
+  if (!trace?.length) return null
+  return (
+    <details className="trace-panel">
+      <summary>
+        <span>Truy vết pipeline</span>
+        <span className="trace-count">{trace.length} bước</span>
+      </summary>
+      <div className="trace-body">
+        {trace.map((item, index) => (
+          <section className="trace-step" key={`${item.step}-${index}`}>
+            <div className="trace-step-title">{index + 1}. {item.title}</div>
+            <dl>
+              {Object.entries(item.data || {}).map(([key, value]) => (
+                <div className="trace-row" key={key}>
+                  <dt>{key}</dt>
+                  <dd><TraceValue value={value} /></dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))}
+      </div>
+    </details>
+  )
+}
+
 function CardMeta({ card }) {
   const hasRating = card.rating != null
   if (!hasRating && !card.stock_status && !card.installment) return null
@@ -32,7 +66,7 @@ function CardMeta({ card }) {
 }
 
 export default function Message({ msg, isLast, onSuggest, disabled }) {
-  const { role, text, recommendation } = msg
+  const { role, text, recommendation, trace } = msg
   const [activeCard, setActiveCard] = useState(null)
   const [activeTab, setActiveTab] = useState('specs') // 'specs' or 'promos'
 
@@ -41,6 +75,7 @@ export default function Message({ msg, isLast, onSuggest, disabled }) {
       <div className="bubble">
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
       </div>
+      {role === 'bot' && <RetrievalTrace trace={trace} />}
       {recommendation?.warnings?.length > 0 && (
         <div className="warn">
           {/* warning-triangle icon (Heroicons) */}

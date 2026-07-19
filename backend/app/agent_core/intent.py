@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Literal
 from pydantic import BaseModel, Field
 from app.agent_core.retriever import get_catalog_metadata, get_schema_summary
 from app.nlu.preprocess import strip_accents
@@ -10,8 +10,9 @@ log = logging.getLogger("agent_core")
 # Lưới dự phòng nhận diện khách từ chối (khi LLM chết); đường chính là ô
 # declines_more_info do LLM điền — hiểu được cả cách nói không có trong list.
 _DECLINE_KW = ["goi y dai", "cu goi y", "goi y luon", "gi cung duoc", "sao cung duoc",
-               "tuy em", "tuy ban", "khong biet", "chua biet", "tu van dai",
+               "tuy em", "tuy ban", "tu van dai",
                "chon giup", "chon dai", "khoi hoi"]
+_UNKNOWN_KW = ("khong biet", "chua biet", "khong ro", "chua ro", "ko biet", "ko ro")
 
 
 def kw_declines(query: str) -> bool:
@@ -120,10 +121,26 @@ def detect_known_unsupported_product(query: str, categories: List[str]) -> Optio
     return None
 
 
+def _rescale_budget(budget_max: Optional[float], text: str) -> Optional[float]:
+    """An toàn hoá đơn vị ngân sách. LLM đôi khi trả về đúng chữ số nhưng quên nhân
+    theo đơn vị khách nói (VD "20 triệu" -> 20 thay vì 20000000.0). Không sản phẩm
+    điện máy nào giá dưới 1.000đ nên một con số dưới ngưỡng này gần như chắc chắn
+    thiếu đơn vị; suy đơn vị lại từ chính câu chữ khách/lịch sử đã dùng thay vì bịa."""
+    if budget_max is None or budget_max <= 0 or budget_max >= 1000:
+        return budget_max
+    flat = text.lower()
+    if re.search(r'triệu|\btr\b|\btrd\b|củ', flat):
+        return budget_max * 1_000_000
+    if re.search(r'nghìn|ngàn|\bk\b', flat):
+        return budget_max * 1000
+    return budget_max
+
+
 def normalize_intent_scope(intent: Dict[str, Any], query: str,
-                           categories: List[str]) -> Dict[str, Any]:
+                           categories: List[str], context_text: str = "") -> Dict[str, Any]:
     """Ép category/unsupported về đúng catalog trước khi router ra quyết định."""
     out = dict(intent)
+    out["budget_max"] = _rescale_budget(out.get("budget_max"), f"{context_text} {query}")
     by_lower = {cat.lower(): cat for cat in categories}
     category = str(out.get("category") or "").strip()
     unsupported = str(out.get("unsupported_product") or "").strip()
@@ -177,11 +194,24 @@ def normalize_intent_scope(intent: Dict[str, Any], query: str,
     return out
 
 
+def kw_unknown_answer(query: str) -> bool:
+    flat = strip_accents(query.lower())
+    return any(k in flat for k in _UNKNOWN_KW)
+
+
 # Pydantic schema mô tả ý định tìm kiếm sản phẩm.
+class SlotUpdateSchema(BaseModel):
+    name: str
+    value: Optional[str] = None
+    status: Literal["filled", "dontcare"]
+    basis: Literal["stated", "interpreted"] = "stated"
+    hard: bool = False
+
+
 class IntentSchema(BaseModel):
     is_meta_inquiry: bool = Field(
         default=False,
-        description="True khi khách hỏi khái niệm/thông số liên quan sản phẩm (OLED, Inverter, dung tích...) hoặc hỏi tổng quan catalog. Không dùng cho kiến thức phổ thông ngoài mua sắm."
+        description="True NẾU VÀ CHỈ NẾU khách hỏi giải thích khái niệm/thông số kỹ thuật (VD 'OLED là gì?', 'dung tích là sao?'), thắc mắc về tiêu chí, hoặc hỏi tổng quan/phân loại sản phẩm. Không dùng cho kiến thức phổ thông ngoài mua sắm."
     )
     meta_reply: Optional[str] = Field(
         default=None,
@@ -227,9 +257,13 @@ class IntentSchema(BaseModel):
         default_factory=list,
         description="Các tính năng hoặc thông số đặc thù người dùng ưu tiên (màn hình lớn, pin trâu, mỏng nhẹ...)."
     )
+    required_features: List[str] = Field(
+        default_factory=list,
+        description="Loại/công nghệ/tính năng khách nói rõ là bắt buộc hoặc gọi đích danh khi tìm (máy in laser -> laser; phải có Wi-Fi -> Wi-Fi)."
+    )
     wants_comparison: bool = Field(
         default=False,
-        description="True nếu khách có ý định xem nhiều lựa chọn, so sánh, phân tích các mẫu khác nhau (VD: 'so sánh', 'có mấy loại', 'xem các option', 'mẫu nào tốt nhất'). False nếu khách chỉ hỏi một nhu cầu chung chung."
+        description="True NẾU VÀ CHỈ NẾU khách CHỦ ĐỘNG yêu cầu xem nhiều lựa chọn, so sánh, phân tích các mẫu khác nhau (VD: 'so sánh', 'có mấy loại', 'xem các option', 'mẫu nào tốt nhất'). False nếu khách chỉ đưa ra một nhu cầu chung chung và đang cần tư vấn 1 sản phẩm phù hợp nhất."
     )
     assumptions: List[str] = Field(
         default_factory=list,
@@ -247,9 +281,29 @@ class IntentSchema(BaseModel):
         default=False,
         description="True nếu câu hỏi quá chung chung, chưa đủ dữ kiện để tư vấn chính xác."
     )
+    has_usage_context: bool = Field(
+        default=False,
+        description="True nếu câu mới cho biết trực tiếp người dùng, hoàn cảnh hoặc mục đích sử dụng."
+    )
     clarification_questions: List[str] = Field(
         default_factory=list,
         description="1-2 câu hỏi làm rõ lịch sự nếu needs_clarification là True."
+    )
+    slot_updates: List[SlotUpdateSchema] = Field(
+        default_factory=list,
+        description="Các thông số thuộc đúng danh sách slot được phép mà câu mới trực tiếp trả lời."
+    )
+    followup_focus: Optional[Literal["usage", "budget", "specs"]] = Field(
+        default=None,
+        description="Trọng tâm duy nhất nên hỏi tiếp trong quy trình khám phá nhu cầu."
+    )
+    followup_fields: List[str] = Field(
+        default_factory=list,
+        description="Nếu followup_focus=specs, tên chính xác 1-3 cột DB sẽ hỏi."
+    )
+    followup_question: Optional[str] = Field(
+        default=None,
+        description="Câu phản hồi hoàn chỉnh, tự nhiên: ghi nhận ý khách rồi hỏi đúng một trọng tâm tiếp theo."
     )
 
 
@@ -396,6 +450,7 @@ def extract_intent_fallback(query: str, history: Optional[List[Dict[str, str]]] 
         "budget_max": budget_max,
         "brand": matched_brand,
         "priority_features": priority_features,
+        "required_features": [],
         "wants_comparison": False,
         "assumptions": [],
         "declines_more_info": kw_declines(query),
@@ -411,15 +466,22 @@ _SCHEMA_HINT = (
     '"is_chitchat": bool, "smalltalk_reply": string|null, '
     '"category": string|null, "transition_message": string|null, "unsupported_product": string|null, '
     '"related_categories": string[], "budget_max": number|null, '
-    '"brand": string|null, "priority_features": string[], "wants_comparison": bool, "assumptions": string[], '
+    '"brand": string|null, "priority_features": string[], "required_features": string[], '
+    '"wants_comparison": bool, "assumptions": string[], '
     '"declines_more_info": bool, "needs_custom_query": bool, "needs_clarification": bool, '
-    '"clarification_questions": string[]}'
+    '"has_usage_context": bool, '
+    '"clarification_questions": string[], '
+    '"slot_updates": [{"name": string, "value": string|null, '
+    '"status": "filled"|"dontcare", "basis": "stated"|"interpreted", "hard": bool}], '
+    '"followup_focus": "usage"|"budget"|"specs"|null, '
+    '"followup_fields": string[], "followup_question": string|null}'
 )
 
 
 def extract_intent(query: str, history: Optional[List[Dict[str, str]]] = None,
                    llm=None, db_path: Optional[str] = None, addr: str = "anh/chị",
-                   self_term: str = "em") -> Dict[str, Any]:
+                   self_term: str = "em",
+                   discovery_context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Trích ý định qua DeepSeek (LLMClient.complete_json). Lỗi/không có llm -> fallback heuristic."""
     if llm is None:
         log.info("intent: không có LLM -> dùng fallback heuristic")
@@ -445,14 +507,34 @@ def extract_intent(query: str, history: Optional[List[Dict[str, str]]] = None,
             "không gọi đó là sản phẩm, không giảng giải dài và BẮT BUỘC kết bằng một câu chuyển nhẹ "
             "sang nhu cầu mua thiết bị học tập/làm việc.\n"
             "- is_meta_inquiry=true khi khách hỏi khái niệm/thông số LIÊN QUAN SẢN PHẨM "
-            "(OLED, Inverter, dung tích...) hoặc hỏi tổng quan catalog. BẮT BUỘC điền meta_reply ngắn gọn.\n"
+            "(OLED, Inverter, dung tích...), hỏi tiêu chí hoặc phân loại sản phẩm. BẮT BUỘC điền "
+            "meta_reply ngắn gọn rồi hỏi lại để tiếp tục tư vấn; đồng thời để category=null, "
+            "priority_features=[] và required_features=[] để không tự động tìm sản phẩm.\n"
             "- wants_comparison=true khi khách chủ động yêu cầu đưa ra nhiều sự lựa chọn hoặc so sánh (VD 'so sánh', 'có những option nào', 'các dòng máy'). False nếu khách chỉ nhờ tư vấn chung.\n"
+            "- required_features chỉ chứa điều kiện sản phẩm phải khớp: loại/công nghệ khách gọi đích danh "
+            "hoặc nói là bắt buộc (VD 'máy in laser' -> ['laser'], 'phải có Wi-Fi' -> ['Wi-Fi']). "
+            "Sở thích mềm để trong priority_features, không đưa vào required_features.\n"
             "- needs_clarification=true khi KHÁCH TRẢ LỜI QUÁ CHUNG CHUNG và bạn cần hỏi thêm để lọc sản phẩm (mục đích, bối cảnh người dùng, ngân sách). TUYỆT ĐỐI KHÔNG bật cờ này nếu khách đang hỏi ngược lại bạn (đó là is_meta_inquiry). False nếu khách vừa trả lời đủ hoặc từ chối bổ sung.\n"
+            "- has_usage_context=true khi chính câu MỚI đã cho biết mua cho ai, dùng ở hoàn cảnh nào hoặc "
+            "phục vụ việc gì; không cần câu chữ cố định như 'dùng để'.\n"
             "- clarification_questions: 1-2 câu hỏi NGẮN, tự nhiên như người bán hàng thật, bám đúng bối cảnh "
             "khách vừa kể. TUYỆT ĐỐI không hỏi lại điều khách đã nói hoặc điều trợ lý đã hỏi trong lịch sử.\n"
+            "- Nếu phần NGỮ CẢNH KHAI THÁC NHU CẦU được cung cấp: đồng thời cập nhật slot và soạn câu hỏi "
+            "tiếp theo ngay trong object này; đây không phải một lượt chat riêng. slot_updates CHỈ chứa cột "
+            "có trong spec_columns và chỉ khi câu MỚI có căn cứ trực tiếp. Khách nói rõ thì basis=stated; "
+            "diễn giải thẳng (VD 'nhà 4 người') thì basis=interpreted; không biết/không quan trọng thì "
+            "status=dontcare. Không tự suy đoán CPU/RAM/tính năng từ mục đích chung.\n"
+            "- followup_focus tuân theo thứ tự mềm có kiểm soát: lấy bối cảnh người dùng/mục đích (usage), "
+            "rồi ngân sách (budget), rồi 1-3 thông số còn thiếu có trong spec_columns (specs). Hãy tính cả "
+            "thông tin khách vừa nói và các câu đã hỏi để bỏ qua mục đã rõ. Nếu hỏi specs, followup_fields "
+            "phải dùng NGUYÊN VĂN tên cột DB.\n"
+            "- followup_question là lời đáp HOÀN CHỈNH như nhân viên bán hàng thật: ghi nhận ngắn gọn chi tiết "
+            "khách vừa chia sẻ rồi nối sang đúng MỘT trọng tâm cần hỏi; tối đa 2 câu ngắn, không bullet, "
+            "không mở đầu chung chung kiểu 'cần thêm thông tin', không hỏi lại dữ kiện đã có.\n"
             "- assumptions: các suy đoán bạn tự rút ra mà khách không nói rõ, ghi ngắn gọn.\n"
-            "- declines_more_info=true nếu khách né/từ chối cung cấp thêm ('gợi ý đại', 'gì cũng được', "
-            "'chọn giúp anh/chị',...).\n"
+            "- declines_more_info=true nếu khách từ chối TOÀN BỘ việc hỏi thêm ('gợi ý đại', 'gì cũng được', "
+            "'chọn giúp anh/chị',...). Nếu khách chỉ nói 'không biết/chưa rõ' để trả lời CÂU HIỆN TẠI thì "
+            "declines_more_info=false: hệ thống sẽ ghi nhận lượt đó và tiếp tục sang câu kế tiếp.\n"
             "- needs_custom_query=true khi khách ràng buộc theo THÔNG SỐ hoặc cách xếp hạng đặc biệt "
             "(dung tích/kích thước/số cửa/'ít tốn điện nhất'/'nhẹ nhất'...) — lọc cơ bản ngành+giá+hãng "
             "không đáp ứng được.\n"
@@ -473,14 +555,18 @@ def extract_intent(query: str, history: Optional[List[Dict[str, str]]] = None,
         for m in (history or []):
             role = "User" if m.get("role") == "user" else "Assistant"
             hist_str += f"{role}: {m.get('content')}\n"
-        user = f"Lịch sử:\n{hist_str or 'Không có'}\n\nCâu hỏi mới: {query}"
+        import json
+        discovery_json = json.dumps(discovery_context or {}, ensure_ascii=False)
+        user = (f"Lịch sử:\n{hist_str or 'Không có'}\n\n"
+                f"NGỮ CẢNH KHAI THÁC NHU CẦU TRƯỚC CÂU MỚI (JSON):\n{discovery_json}\n\n"
+                f"Câu hỏi mới: {query}")
         raw = llm.complete_json(system, user, _SCHEMA_HINT)
         log.info("intent: trích qua LLM thành công")
         intent = IntentSchema(**{
             k: raw[k] for k in IntentSchema.model_fields if k in raw
         }).model_dump()
         categories = get_catalog_metadata(db_path)["categories"]
-        return normalize_intent_scope(intent, query, categories)
+        return normalize_intent_scope(intent, query, categories, context_text=hist_str)
     except Exception as e:
         log.warning("intent: LLM lỗi (%s) -> dùng fallback heuristic", e)
         return extract_intent_fallback(query, history, db_path, addr=addr, self_term=self_term)
@@ -488,14 +574,24 @@ def extract_intent(query: str, history: Optional[List[Dict[str, str]]] = None,
 
 def has_enough_slots(intent: Dict[str, Any]) -> bool:
     """Thông tin tối thiểu để tiến hành tìm kiếm mà không cần hỏi thêm."""
+    if intent.get("declines_more_info"):
+        return True
+
     cat = intent.get("category")
     budget = intent.get("budget_max")
     brand = intent.get("brand")
     feats = intent.get("priority_features", [])
-    if not cat and not budget and not brand and not feats:
+
+    has_filter = bool(budget or brand or (feats and len(feats) > 0))
+
+    if not cat and not has_filter:
         return False
-    if cat and (budget or brand or (feats and len(feats) > 0)):
-        return True
-    if intent.get("needs_clarification") and not (budget or (feats and len(feats) > 0)):
+
+    # KHI VÀ CHỈ KHI có cat và có ít nhất 1 filter (giá, hãng, tính năng), thì mới đủ điều kiện.
+    if cat and not has_filter:
         return False
+
+    if intent.get("needs_clarification") and not has_filter:
+        return False
+
     return True

@@ -1,5 +1,6 @@
 from app.llm.client import FakeLLM
 from app.agent_core.intent import extract_intent, extract_intent_fallback, has_enough_slots
+from app.agent_core.slots import merge_slot_updates
 from tests.agent_helpers import make_db
 
 
@@ -32,6 +33,62 @@ def test_llm_intent_maps_fields(tmp_path):
     assert intent["budget_max"] == 20000000
     assert intent["priority_features"] == ["tiết kiệm điện"]
     assert intent["needs_clarification"] is False
+
+
+def test_intent_reuses_same_call_for_natural_followup_and_slot_updates(tmp_path):
+    db = _db(tmp_path)
+    llm = FakeLLM(json_responses=[{
+        "category": "Tủ Lạnh",
+        "has_usage_context": True,
+        "slot_updates": [{
+            "name": "Dung tích tổng", "value": "khoảng 300 lít",
+            "status": "filled", "basis": "stated", "hard": False,
+        }],
+        "followup_focus": "budget",
+        "followup_fields": [],
+        "followup_question": (
+            "Dạ, tủ khoảng 300 lít sẽ vừa nhu cầu gia đình mình. "
+            "Anh/chị muốn cân đối ngân sách trong khoảng nào ạ?"
+        ),
+    }])
+    context = {
+        "category": "Tủ Lạnh",
+        "expected_focus_before_current_answer": "usage",
+        "spec_columns": ["Dung tích tổng", "Điện năng tiêu thụ"],
+        "current_slots": [],
+    }
+
+    intent = extract_intent(
+        "nhà 4 người, tôi muốn loại khoảng 300 lít", [], llm, db,
+        discovery_context=context,
+    )
+
+    assert len(llm.calls) == 1
+    assert intent["followup_focus"] == "budget"
+    assert "300 lít" in intent["followup_question"]
+    assert intent["slot_updates"][0]["name"] == "Dung tích tổng"
+    assert '"spec_columns": ["Dung tích tổng", "Điện năng tiêu thụ"]' in llm.calls[0][1]
+
+
+def test_merge_slot_updates_rejects_invented_columns_and_preserves_hard_constraint():
+    current = [{
+        "name": "Loại sản phẩm", "value": "laser", "status": "filled",
+        "basis": "stated", "hard": True,
+    }]
+    updates = [
+        {"name": "Loại sản phẩm", "value": "laser màu", "status": "filled",
+         "basis": "stated", "hard": False},
+        {"name": "Kết nối", "value": "Wi-Fi", "status": "filled",
+         "basis": "stated", "hard": False},
+        {"name": "Độ tuổi", "value": "30", "status": "filled",
+         "basis": "stated", "hard": False},
+    ]
+
+    slots = merge_slot_updates(["Loại sản phẩm", "Kết nối"], current, updates)
+    by_name = {slot["name"]: slot for slot in slots}
+
+    assert set(by_name) == {"Loại sản phẩm", "Kết nối"}
+    assert by_name["Loại sản phẩm"]["hard"] is True
 
 
 def test_llm_error_falls_back(tmp_path):
